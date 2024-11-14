@@ -1,0 +1,23 @@
+# configs/config.yaml
+data:
+  path: "data/"
+  file_names:
+    - "curve_kdtree_1.csv"
+    - "rect_kdtree_1.csv"
+
+model:
+  k: 20
+  num_classes: 1  # Since it's a regression task for saliency scores
+  dropout: 0.5
+
+training:
+  epochs: 1
+  batch_size: 16
+  learning_rate: 0.001
+  k_folds: 2  # Since you have two samples
+  checkpoint_dir: "checkpoints/"
+
+evaluation:
+  metrics:
+    - "mse"
+    - "mae"
