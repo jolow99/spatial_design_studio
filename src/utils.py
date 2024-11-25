@@ -5,12 +5,6 @@ import os
 from datetime import datetime
 import yaml
 
-def mean_squared_error(pred, target):
-    return nn.MSELoss()(pred, target)
-
-def mean_absolute_error(pred, target):
-    return nn.L1Loss()(pred, target)
-
 def load_config(config_path):
     with open(config_path, 'r') as file:
         config = yaml.safe_load(file)

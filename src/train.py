@@ -1,34 +1,11 @@
 # src/train.py
 import torch
-from tqdm import tqdm
-from src.utils import mean_squared_error, mean_absolute_error, save_checkpoint
-
-def train_one_epoch(model, optimizer, train_loader, device):
-    model.train()
-    total_loss = 0
-    for batch in train_loader:
-        outputs = model(batch.to(device))
-        loss = mean_squared_error(outputs, batch.y.to(device))
-        loss.backward()
-        optimizer.step()
-        
-        total_loss += loss.item()
-    return total_loss / len(train_loader)
-
-def validate(model, dataloader, device):
-    model.eval()
-    total_mse = 0
-    total_mae = 0
-    with torch.no_grad():
-        for batch in tqdm(dataloader, desc="Validation"):
-            batch = batch.to(device)
-            outputs = model(batch)
-            total_mse += mean_squared_error(outputs, batch.y).item()
-            total_mae += mean_absolute_error(outputs, batch.y).item()
-    return total_mse / len(dataloader), total_mae / len(dataloader)
+from src.utils import save_checkpoint
+import torch.nn as nn
 
 def train_model(model, optimizer, train_loader, test_loader, device, num_epochs, checkpoint_dir, config=None):
     best_test_loss = float('inf')
+    criterion = nn.MSELoss()  # Define MSE loss directly
     print("Starting training...")
     
     for epoch in range(num_epochs):
@@ -36,84 +13,85 @@ def train_model(model, optimizer, train_loader, test_loader, device, num_epochs,
         
         # Training
         model.train()
-        total_train_mse = 0
-        total_train_mae = 0
+        total_train_loss = 0
         total_samples = 0
         
-        for i, batch in enumerate(train_loader):
+        for data in train_loader:
             # Extract metadata for logging
-            form_type = batch.metadata['form_type'][0]
-            form_number = batch.metadata['form_number'][0]
-            print(f"\nTraining on {form_type.capitalize()} Model {form_number}")
+            form_type = data.metadata['form_type']
+            form_number = data.metadata['form_number'][0]
+            print(f"\nTraining on {form_type[0].capitalize()} Model {form_number}")
             
             optimizer.zero_grad()
-            batch = batch.to(device)
-            outputs = model(batch)
+            data = data.to(device)
+            outputs = model(data)
             
-            # Calculate both MSE and MAE
-            mse_loss = mean_squared_error(outputs, batch.y)
-            mae = mean_absolute_error(outputs, batch.y)
+            # Add debugging prints
+            print(f"Outputs min: {outputs.min().item():.6f}, max: {outputs.max().item():.6f}")
+            print(f"Target min: {data.y.min().item():.6f}, max: {data.y.max().item():.6f}")
             
-            # Use MSE as training loss
-            mse_loss.backward()
+            # Calculate MSE loss
+            loss = criterion(outputs, data.y)
+            
+            # Add gradient debugging
+            loss.backward()
+            total_grad = 0
+            for param in model.parameters():
+                if param.grad is not None:
+                    total_grad += param.grad.abs().sum()
+            print(f"Total gradient magnitude: {total_grad:.6f}")
+            
             optimizer.step()
             
-            # Update metrics
-            batch_size = batch.x.size(0)
-            total_train_mse += mse_loss.item() * batch_size
-            total_train_mae += mae.item() * batch_size
+            batch_size = data.x.size(0)
+            total_train_loss += loss.item() * batch_size
             total_samples += batch_size
             
-            print(f"Batch MSE: {mse_loss.item():.4f}, MAE: {mae.item():.4f}")
+            print(f"Loss: {loss.item():.4f}")
         
         # Testing
         model.eval()
-        total_test_mse = 0
-        total_test_mae = 0
+        total_test_loss = 0
         test_samples = 0
         
         print("\nEvaluating test models...")
         with torch.no_grad():
             for batch in test_loader:
-                form_type = batch.metadata['form_type'][0]
+                form_type = batch.metadata['form_type']
                 form_number = batch.metadata['form_number'][0]
-                print(f"Testing on {form_type.capitalize()} Model {form_number}")
+                print(f"Testing on {form_type[0].capitalize()} Model {form_number}")
                 
                 batch = batch.to(device)
                 outputs = model(batch)
-                test_mse = mean_squared_error(outputs, batch.y).item()
-                test_mae = mean_absolute_error(outputs, batch.y).item()
+                test_loss = criterion(outputs, batch.y).item()
                 
                 batch_size = batch.x.size(0)
-                total_test_mse += test_mse * batch_size
-                total_test_mae += test_mae * batch_size
+                total_test_loss += test_loss * batch_size
                 test_samples += batch_size
                 
-                print(f"Test MSE: {test_mse:.4f}, MAE: {test_mae:.4f}")
+                print(f"Test Loss: {test_loss:.4f}")
         
         # Calculate averages
-        avg_train_mse = total_train_mse / total_samples
-        avg_train_mae = total_train_mae / total_samples
-        avg_test_mse = total_test_mse / test_samples
-        avg_test_mae = total_test_mae / test_samples
+        avg_train_loss = total_train_loss / total_samples
+        avg_test_loss = total_test_loss / test_samples
         
         print(f"\nEpoch Summary:")
-        print(f"Average Training - MSE: {avg_train_mse:.4f}, MAE: {avg_train_mae:.4f}")
-        print(f"Average Test     - MSE: {avg_test_mse:.4f}, MAE: {avg_test_mae:.4f}")
+        print(f"Average Training Loss: {avg_train_loss:.4f}")
+        print(f"Average Test Loss: {avg_test_loss:.4f}")
         
-        # Save checkpoint for every epoch
+        # Save checkpoint every epoch
+        is_best = avg_test_loss < best_test_loss
+        if is_best:
+            best_test_loss = avg_test_loss
+        
         save_checkpoint(
             model=model,
             optimizer=optimizer,
             epoch=epoch,
-            val_loss=avg_test_mse,
+            val_loss=avg_test_loss,
             checkpoint_dir=checkpoint_dir,
-            is_best=(avg_test_mse < best_test_loss),
+            is_best=is_best,
             config=config
         )
-        
-        # Update best loss if needed
-        if avg_test_mse < best_test_loss:
-            best_test_loss = avg_test_mse
     
     return best_test_loss

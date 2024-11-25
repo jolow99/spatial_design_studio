@@ -65,4 +65,5 @@ class DGCNN(nn.Module):
         x = self.fc1(x)
         x = self.fc2(x)
         x = self.fc3(x)  # Shape: [N, 1] where N is total number of points
+        x = torch.sigmoid(x)  # Add sigmoid activation
         return x

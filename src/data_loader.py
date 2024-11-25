@@ -7,31 +7,32 @@ from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader as PyGDataLoader
 
 class PointCloudDataset(Dataset):
-    def __init__(self, data_dir, demographic='novice'):
+    def __init__(self, data_dir, demographic='novice', subject='subject1'):
         self.point_clouds = []
         self.saliency_scores = []
         self.metadata = []
         
-        # Get all subjects for this demographic
-        demographic_dir = os.path.join(data_dir, demographic)
-        for subject_dir in os.listdir(demographic_dir):
-            subject_path = os.path.join(demographic_dir, subject_dir)
+        # Construct path to specific subject directory
+        subject_path = os.path.join(data_dir, demographic, subject)
+        
+        if not os.path.exists(subject_path):
+            raise ValueError(f"Subject directory not found: {subject_path}")
             
-            for file in os.listdir(subject_path):
-                if not file.endswith('_score.csv'):
-                    continue
-                    
-                df = pd.read_csv(os.path.join(subject_path, file))
-                points = df[['x', 'y', 'z']].values.astype('float32')
-                scores = df['NormalizedScore'].values.astype('float32')
+        for file in os.listdir(subject_path):
+            if not file.endswith('_score.csv'):
+                continue
                 
-                self.point_clouds.append(points)
-                self.saliency_scores.append(scores)
-                self.metadata.append({
-                    'subject': subject_dir,
-                    'form_type': 'curved' if 'curved' in file else 'rect',
-                    'form_number': int(file.split('_')[0].replace('curved', '').replace('rect', ''))
-                })
+            df = pd.read_csv(os.path.join(subject_path, file))
+            points = df[['x', 'y', 'z']].values.astype('float32')
+            scores = df['NormalizedScore'].values.astype('float32')
+            
+            self.point_clouds.append(points)
+            self.saliency_scores.append(scores)
+            self.metadata.append({
+                'subject': subject,
+                'form_type': 'curved' if 'curved' in file else 'rect',
+                'form_number': int(file.split('_')[0].replace('curved', '').replace('rect', ''))
+            })
 
     def __len__(self):
         return len(self.point_clouds)
@@ -48,9 +49,6 @@ class PointCloudDataset(Dataset):
         return data
 
 def get_train_test_dataloaders(dataset, test_models=[1, 15], batch_size=32):
-    """
-    Replace k-fold with architectural form-based split
-    """
     train_indices = []
     test_indices = []
     

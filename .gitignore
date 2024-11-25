@@ -2,3 +2,6 @@
 /__pycache__
 /visualization_sample_0.png
 /visualization_sample_1.png
+checkpoints
+predictions
+src/__pycache__

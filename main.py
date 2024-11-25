@@ -4,8 +4,7 @@ import torch.nn as nn
 import torch.optim as optim
 from src.data_loader import PointCloudDataset, get_train_test_dataloaders
 from src.models.dgcnn import DGCNN
-from src.train import train_one_epoch, validate, train_model
-from src.evaluate import evaluate_model
+from src.train import train_model
 from src.utils import load_config, load_checkpoint
 import yaml
 import os
@@ -16,14 +15,13 @@ def main():
     print("loaded config")
 
     # Device configuration
-    device = torch.device("mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu")
-    # evice = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
-    # Load dataset
+    # Load dataset with subject and demographic from config
     dataset = PointCloudDataset(
         data_dir=config['data']['path'],
-        demographic='novice'
+        demographic=config['data']['demographic'],
+        subject=config['data']['subject']
     )
 
     
