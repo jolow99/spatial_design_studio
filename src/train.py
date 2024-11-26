@@ -4,44 +4,100 @@ from src.utils import save_checkpoint
 import torch.nn as nn
 from tqdm import tqdm
 
-def sigmoid_focal_loss(pred, target, gamma=2.0, alpha=0.25):
+def softmax_focal_loss(pred, target, gamma=2.0, alpha=None):
     """
-    Sigmoid Focal Loss as defined in the paper (equation 5)
-    SFL(p,y) = -1/n ∑[αy(1-p)^γ logp + (1-α)(1-y)p^γ log(1-p)]
+    Softmax Focal Loss for multiclass classification (adapted for mutually exclusive classes).
     
     Args:
-        pred: predictions (logits)
-        target: ground truth labels
-        gamma: focusing parameter to reduce weight of easy examples
-        alpha: balancing parameter for class imbalance
+        pred: Predictions (logits) with shape [batch_size, num_classes].
+        target: Ground truth labels with shape [batch_size].
+        gamma: Focusing parameter to reduce weight of easy examples.
+        alpha: Optional class balancing weights (list or tensor of shape [num_classes]).
+               If None, all classes are treated equally.
+    
+    Returns:
+        Loss value (scalar).
     """
-    num_classes = pred.size(1)
-    one_hot_target = torch.nn.functional.one_hot(target, num_classes=num_classes).float()
+    # Apply softmax to logits to get probabilities
+    probs = torch.nn.functional.softmax(pred, dim=1)
     
-    # Apply sigmoid to get probabilities (equation 6)
-    p = torch.sigmoid(pred)
+    # Select the probabilities corresponding to the target class
+    target_probs = probs.gather(1, target.unsqueeze(1)).squeeze(1)  # Shape: [batch_size]
     
-    # Calculate focal loss for positive examples (y=1)
-    pos_loss = -alpha * ((1 - p) ** gamma) * torch.log(p + 1e-8)
+    # Compute the focal loss modulation factor (1 - p_t)^γ
+    focal_weight = (1 - target_probs) ** gamma
     
-    # Calculate focal loss for negative examples (y=0)
-    neg_loss = -(1 - alpha) * (p ** gamma) * torch.log(1 - p + 1e-8)
-    
-    # Combine losses based on target (equation 5)
-    loss = one_hot_target * pos_loss + (1 - one_hot_target) * neg_loss
-    
-    # Average over all samples and classes
+    # Compute the cross-entropy loss for the target class
+    ce_loss = -torch.log(target_probs + 1e-8)  # Shape: [batch_size]
+
+    # Apply alpha (class weighting) if provided
+    if alpha is not None:
+        alpha = torch.tensor(alpha, device=pred.device)  # Ensure alpha is on the same device
+        class_weights = alpha.gather(0, target)  # Get weights for the true classes
+        loss = focal_weight * class_weights * ce_loss
+    else:
+        loss = focal_weight * ce_loss
+
+    # Return the mean loss over the batch
     return loss.mean()
 
+def calculate_class_weights(dataset):
+    """
+    Calculate class weights based on inverse class frequencies
+    
+    Args:
+        dataset: PyTorch Dataset object containing all training data
+        
+    Returns:
+        List of class weights normalized to have minimum weight of 1.0
+    """
+    # Initialize class counts
+    class_counts = [0] * 5  # 5 classes (0-4)
+    total_points = 0
+    
+    # Count instances of each class
+    for data in dataset:
+        for class_idx in range(5):
+            count = (data.y == class_idx).sum().item()
+            class_counts[class_idx] += count
+            total_points += count
+    
+    # Calculate inverse frequencies
+    inverse_freqs = [total_points / (count + 1e-8) for count in class_counts]
+    
+    # Normalize weights so minimum weight is 1.0
+    min_weight = min(inverse_freqs)
+    normalized_weights = [freq / min_weight for freq in inverse_freqs]
+    
+    print("\nClass distribution and weights:")
+    for i, (count, weight) in enumerate(zip(class_counts, normalized_weights)):
+        print(f"Class {i}: {count} samples, weight = {weight:.2f}")
+    
+    return normalized_weights
+
 def train_model(model, optimizer, train_loader, test_loader, device, num_epochs, checkpoint_dir, config=None):
+    # Add learning rate scheduler
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer,
+        mode='min',
+        factor=0.5,
+        patience=2,
+        verbose=True
+    )
+    
+    # Add gradient clipping to handle large gradients
+    max_grad_norm = 1.0
+    
     best_test_loss = float('inf')
     
-    # Simplified criterion without class weights
-    criterion = lambda pred, target: sigmoid_focal_loss(
+    # Calculate class weights from training data
+    alpha = calculate_class_weights(train_loader.dataset.dataset)  # Access underlying dataset through Subset
+    
+    criterion = lambda pred, target: softmax_focal_loss(
         pred, 
         target,
-        gamma=2.0,
-        alpha=0.25
+        gamma=2.0,  # Keep the focusing parameter
+        alpha=alpha  # Updated class weights
     )
     
     print("Starting training...")
@@ -74,13 +130,24 @@ def train_model(model, optimizer, train_loader, test_loader, device, num_epochs,
             loss = criterion(outputs, data.y)
             
             loss.backward()
-            total_grad = 0
+            
+            # Calculate and print total gradient magnitude
+            total_grad_magnitude = 0.0
             for param in model.parameters():
                 if param.grad is not None:
-                    total_grad += param.grad.abs().sum()
-            print(f"Total gradient magnitude: {total_grad:.6f}")
+                    total_grad_magnitude += param.grad.data.norm(2).item()
+            print(f"Total gradient magnitude: {total_grad_magnitude:.6f}")
+            
+            # Gradient clipping
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
             
             optimizer.step()
+            
+            # Optional: Print per-layer gradient magnitudes for debugging
+            if epoch == 0 and len(train_pbar) < 5:  # Only for first few batches of first epoch
+                for name, param in model.named_parameters():
+                    if param.grad is not None:
+                        print(f"Layer {name} gradient magnitude: {param.grad.data.norm(2).item():.6f}")
             
             batch_size = data.x.size(0)
             total_train_loss += loss.item() * batch_size
@@ -133,5 +200,8 @@ def train_model(model, optimizer, train_loader, test_loader, device, num_epochs,
             is_best=is_best,
             config=config
         )
+        
+        # Update learning rate
+        scheduler.step(avg_test_loss)
     
     return best_test_loss
