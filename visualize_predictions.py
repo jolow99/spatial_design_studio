@@ -8,38 +8,46 @@ from src.models.dgcnn import DGCNN
 from src.data_loader import PointCloudDataset, get_train_test_dataloaders
 
 def visualize_prediction(model, data, device, save_path=None):
-    """Visualize ground truth saliency and predicted saliency scores"""
+    """Visualize ground truth classes and predicted classes"""
     model.eval()
     
     with torch.no_grad():
         data = data.to(device)
-        predictions = model(data).cpu().numpy()
+        outputs = model(data)
+        predictions = torch.softmax(outputs, dim=1)  # Convert to probabilities
+        pred_classes = predictions.argmax(dim=1).cpu().numpy()
     
     points = data.x.cpu().numpy()
     ground_truth = data.y.cpu().numpy()
     
+    # Define colors and class names
+    colors = ['blue', 'green', 'yellow', 'orange', 'red']
+    class_names = ['No attention', 'Low', 'Medium-low', 'Medium-high', 'High']
+    
     # Create figure with two subplots
     fig = plt.figure(figsize=(15, 7))
     
-    # Get min and max values across both ground truth and predictions
-    vmin = min(ground_truth.min(), predictions.min())
-    vmax = max(ground_truth.max(), predictions.max())
-    
-    # Ground truth saliency (left)
+    # Ground truth classes (left)
     ax1 = fig.add_subplot(121, projection='3d')
     scatter1 = ax1.scatter(points[:, 0], points[:, 1], points[:, 2], 
-                          c=ground_truth, cmap='viridis', s=1,
-                          vmin=vmin, vmax=vmax)
+                          c=[colors[int(c)] for c in ground_truth],
+                          s=2)
     ax1.set_title(f"{data.metadata['form_type'][0].capitalize()} Model {data.metadata['form_number'][0]} - Ground Truth")
-    plt.colorbar(scatter1)
     
-    # Predicted saliency (right)
+    # Add legend for ground truth
+    legend_elements = [plt.Line2D([0], [0], marker='o', color='w',
+                                markerfacecolor=c, label=class_names[i],
+                                markersize=10)
+                      for i, c in enumerate(colors)]
+    ax1.legend(handles=legend_elements)
+    
+    # Predicted classes (right)
     ax2 = fig.add_subplot(122, projection='3d')
     scatter2 = ax2.scatter(points[:, 0], points[:, 1], points[:, 2], 
-                          c=predictions, cmap='viridis', s=1,
-                          vmin=vmin, vmax=vmax)
+                          c=[colors[int(c)] for c in pred_classes],
+                          s=2)
     ax2.set_title(f"{data.metadata['form_type'][0].capitalize()} Model {data.metadata['form_number'][0]} - Predicted")
-    plt.colorbar(scatter2)
+    ax2.legend(handles=legend_elements)
     
     # Set consistent viewing angles and limits
     for ax in [ax1, ax2]:
@@ -62,12 +70,23 @@ def visualize_prediction(model, data, device, save_path=None):
         ax.set_ylim(mid_y - max_range, mid_y + max_range)
         ax.set_zlim(mid_z - max_range, mid_z + max_range)
     
+    # Add accuracy information
+    accuracy = np.mean(pred_classes == ground_truth)
+    plt.suptitle(f'Accuracy: {accuracy:.2%}', y=0.95)
+    
     plt.tight_layout()
     
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
     
     plt.show()
+    
+    # Print classification report
+    print("\nClass Distribution:")
+    for i in range(5):
+        print(f"Class {i} ({class_names[i]}):")
+        print(f"  Ground Truth: {np.sum(ground_truth == i)}")
+        print(f"  Predicted: {np.sum(pred_classes == i)}")
 
 def main():
     # Load configuration

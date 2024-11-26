@@ -6,7 +6,7 @@ from torch_geometric.nn import DynamicEdgeConv
 import torch_geometric.nn
 
 class DGCNN(nn.Module):
-    def __init__(self, k=20, dropout=0.5):
+    def __init__(self, k=20, dropout=0.5, num_classes=5):
         super(DGCNN, self).__init__()
         self.k = k
         self.conv1 = DynamicEdgeConv(nn=nn.Sequential(
@@ -47,23 +47,19 @@ class DGCNN(nn.Module):
             nn.ReLU(),
             nn.Dropout(p=dropout)
         )
-        self.fc3 = nn.Linear(256, 1)
+        self.fc3 = nn.Linear(256, num_classes)
 
     def forward(self, data):
-        x, batch = data.x, data.batch  # Assuming data.x has shape [N, 3]
+        x, batch = data.x, data.batch
         
-        # Apply convolutions
         x1 = self.conv1(x, batch)
         x2 = self.conv2(x1, batch)
         x3 = self.conv3(x2, batch)
         x4 = self.conv4(x3, batch)
         
-        # Concatenate all features
-        x = torch.cat((x1, x2, x3, x4), dim=1)  # [N, C]
+        x = torch.cat((x1, x2, x3, x4), dim=1)
         
-        # Remove global pooling and directly apply FC layers to each point
         x = self.fc1(x)
         x = self.fc2(x)
-        x = self.fc3(x)  # Shape: [N, 1] where N is total number of points
-        x = torch.sigmoid(x)  # Add sigmoid activation
+        x = self.fc3(x)
         return x

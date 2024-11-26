@@ -1,9 +1,11 @@
 import os
 import torch
 import pandas as pd
+import numpy as np
 from src.models.dgcnn import DGCNN
 from src.utils import load_config
 from src.data_loader import PointCloudDataset
+from src.visualization import visualize_attention_3d
 
 def get_latest_checkpoint():
     checkpoint_dir = "checkpoints"
@@ -13,22 +15,45 @@ def get_latest_checkpoint():
     latest_dir = max(timestamp_dirs)
     return os.path.join(checkpoint_dir, latest_dir)
 
-def save_predictions(points, predictions, form_type, form_number):
+def save_predictions(points, predictions, attention_classes, form_type, form_number):
     # Create predictions directory if it doesn't exist
     os.makedirs("predictions", exist_ok=True)
     
-    # Create DataFrame with original points and predictions
+    # Convert class probabilities to class labels
+    predicted_classes = predictions.argmax(axis=1)
+    
+    # Create DataFrame with original points, predicted classes, and class probabilities
     df = pd.DataFrame({
         'x': points[:, 0],
         'y': points[:, 1],
         'z': points[:, 2],
-        'predicted_score': predictions.flatten()
+        'predicted_class': predicted_classes,
+        'true_class': attention_classes,
     })
+    
+    # Add probability columns for each class
+    for i in range(5):
+        df[f'prob_class_{i}'] = predictions[:, i]
     
     # Save to CSV in predictions directory
     output_filename = os.path.join("predictions", f'predictions_{form_type}{form_number}.csv')
     df.to_csv(output_filename, index=False)
     print(f"Saved predictions to {output_filename}")
+    
+    # Create and save visualization
+    vis_filename = os.path.join("predictions", f'visualization_{form_type}{form_number}.png')
+    visualize_attention_3d(points, predicted_classes, save_path=vis_filename)
+    print(f"Saved visualization to {vis_filename}")
+    
+    # Print classification metrics
+    print("\nClassification Results:")
+    print("Class Distribution:")
+    for i in range(5):
+        print(f"Class {i}: {np.sum(predicted_classes == i)} points")
+    
+    # Calculate accuracy
+    accuracy = np.mean(predicted_classes == attention_classes)
+    print(f"Overall Accuracy: {accuracy:.4f}")
 
 def main():
     # Get latest checkpoint directory
@@ -40,8 +65,8 @@ def main():
     # Device configuration
     device = torch.device("cpu")
     
-    # Initialize model
-    model = DGCNN(k=config['model']['k'], dropout=config['model']['dropout']).to(device)
+    # Initialize model with 5 classes
+    model = DGCNN(k=config['model']['k'], dropout=config['model']['dropout'], num_classes=5).to(device)
     
     # Load the best model
     checkpoint_path = os.path.join(checkpoint_dir, 'best_model.pt')
@@ -83,11 +108,15 @@ def main():
             
             # Get the data and make predictions
             data = dataset[target_idx].to(device)
-            predictions = model(data).cpu().numpy()
-            points = data.x.cpu().numpy()
+            outputs = model(data)
             
-            # Save predictions to CSV
-            save_predictions(points, predictions, form_type, form_number)
+            # Apply softmax to get probabilities
+            predictions = torch.softmax(outputs, dim=1).cpu().numpy()
+            points = data.x.cpu().numpy()
+            attention_classes = data.y.cpu().numpy()
+            
+            # Save predictions and visualizations
+            save_predictions(points, predictions, attention_classes, form_type, form_number)
 
 if __name__ == "__main__":
     main()

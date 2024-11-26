@@ -5,11 +5,19 @@ import torch
 from torch.utils.data import Dataset
 from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader as PyGDataLoader
+import numpy as np
+
+def convert_to_classes(normalized_scores):
+    bins = [0, 0.25, 0.50, 0.75, 1.0]
+    classes = np.digitize(normalized_scores, bins) - 1
+    # Handle the zero case separately
+    classes[normalized_scores == 0] = 0
+    return classes
 
 class PointCloudDataset(Dataset):
     def __init__(self, data_dir, demographic='novice', subject='subject1'):
         self.point_clouds = []
-        self.saliency_scores = []
+        self.attention_classes = []
         self.metadata = []
         
         # Construct path to specific subject directory
@@ -24,10 +32,13 @@ class PointCloudDataset(Dataset):
                 
             df = pd.read_csv(os.path.join(subject_path, file))
             points = df[['x', 'y', 'z']].values.astype('float32')
-            scores = df['NormalizedScore'].values.astype('float32')
+            
+            # Convert continuous scores to classes
+            scores = df['NormalizedScore'].values
+            attention_classes = convert_to_classes(scores)
             
             self.point_clouds.append(points)
-            self.saliency_scores.append(scores)
+            self.attention_classes.append(attention_classes)
             self.metadata.append({
                 'subject': subject,
                 'form_type': 'curved' if 'curved' in file else 'rect',
@@ -39,12 +50,12 @@ class PointCloudDataset(Dataset):
 
     def __getitem__(self, idx):
         points = torch.tensor(self.point_clouds[idx])
-        scores = torch.tensor(self.saliency_scores[idx]).reshape(-1, 1)
+        classes = torch.tensor(self.attention_classes[idx], dtype=torch.long)
         
         data = Data(
             x=points,        # [N, 3] Node features
-            y=scores,        # [N, 1] Node-wise scores
-            metadata=self.metadata[idx]  # Store metadata for validation
+            y=classes,       # [N] Node-wise class labels
+            metadata=self.metadata[idx]
         )
         return data
 
