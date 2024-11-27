@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from src.data_loader import PointCloudDataset, get_train_test_dataloaders
-from src.models.dgcnn import DGCNN
+from src.models.dgcnn import ModifiedDGCNN
 from src.train import train_model
 from src.utils import load_config, load_checkpoint
 import yaml
@@ -33,9 +33,9 @@ def main():
     )
     
     # Initialize model and optimizer
-    model = DGCNN(
-        k=config['model']['k'],
-        dropout=config['model']['dropout']
+    model = ModifiedDGCNN(
+        num_classes=5,
+        k=config['model']['k']
     ).to(device)
     
     optimizer = torch.optim.Adam(

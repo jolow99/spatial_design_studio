@@ -7,7 +7,6 @@ data:
 model:
   k: 20
   dropout: 0.5
-  geometric_loss_weight: 0.2
 
 training:
   epochs: 1

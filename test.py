@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from src.utils import load_checkpoint, load_config
-from src.models.dgcnn import DGCNN
+from src.models.dgcnn import ModifiedDGCNN
 from src.data_loader import PointCloudDataset, get_train_test_dataloaders
 
 def test_and_visualize():
@@ -24,7 +24,7 @@ def test_and_visualize():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     # Initialize model
-    model = DGCNN(k=config['model']['k'], dropout=config['model']['dropout']).to(device)
+    model = ModifiedDGCNN(num_classes=5, k=config['model']['k']).to(device)
     
     # Load best model from latest directory
     checkpoint_path = os.path.join(checkpoint_dir, latest_dir, 'best_model.pt')

@@ -102,21 +102,6 @@ def train_model(model, optimizer, train_loader, test_loader, device, num_epochs,
     
     print("Starting training...")
     
-    # Add geometric feature loss component
-    def geometric_consistency_loss(features, points):
-        """Additional loss term to ensure geometric feature consistency"""
-        # Calculate pairwise distances in feature space and coordinate space
-        feat_dist = torch.cdist(features, features)
-        coord_dist = torch.cdist(points, points)
-        
-        # Normalize distances
-        feat_dist = feat_dist / feat_dist.max()
-        coord_dist = coord_dist / coord_dist.max()
-        
-        # Calculate consistency loss
-        consistency_loss = torch.mean((feat_dist - coord_dist) ** 2)
-        return consistency_loss * 0.1  # weight factor
-    
     for epoch in range(num_epochs):
         model.train()
         total_train_loss = 0
@@ -135,8 +120,7 @@ def train_model(model, optimizer, train_loader, test_loader, device, num_epochs,
             geom_features = data.x[:, 3:]  # geometric features
             
             outputs = model(data)
-            
-            # Add debugging prints for training (removed 100 batch restriction)
+        
             pred_classes = outputs.argmax(dim=1)
             print(f"Training Batch Statistics:")
             print(f"Raw logits (first sample): {outputs[0][:5]}")
@@ -144,12 +128,7 @@ def train_model(model, optimizer, train_loader, test_loader, device, num_epochs,
             print(f"Target class distribution: {[int((data.y == i).sum()) for i in range(5)]}")
             
             # Calculate main classification loss
-            class_loss = criterion(outputs, data.y)
-            
-            # Add geometric consistency loss
-            geom_loss = geometric_consistency_loss(geom_features, points)
-            loss = class_loss + geom_loss
-            
+            loss = criterion(outputs, data.y)
             loss.backward()
             
             # Gradient clipping and optimization
@@ -160,10 +139,9 @@ def train_model(model, optimizer, train_loader, test_loader, device, num_epochs,
             total_train_loss += loss.item() * batch_size
             total_samples += batch_size
             
-            # Update progress bar with both loss components
+            # Update progress bar with only the classification loss
             train_pbar.set_postfix({
-                'Class Loss': f'{class_loss.item():.4f}',
-                'Geom Loss': f'{geom_loss.item():.4f}'
+                'Class Loss': f'{loss.item():.4f}'
             })
         
         # Testing
