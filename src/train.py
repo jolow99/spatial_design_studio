@@ -6,40 +6,50 @@ from tqdm import tqdm
 
 def softmax_focal_loss(pred, target, gamma=2.0, alpha=None):
     """
-    Softmax Focal Loss for multiclass classification (adapted for mutually exclusive classes).
+    Ordinal Focal Loss for saliency classification with ordered classes (0-4).
     
     Args:
         pred: Predictions (logits) with shape [batch_size, num_classes].
         target: Ground truth labels with shape [batch_size].
         gamma: Focusing parameter to reduce weight of easy examples.
         alpha: Optional class balancing weights (list or tensor of shape [num_classes]).
-               If None, all classes are treated equally.
     
     Returns:
         Loss value (scalar).
     """
     # Apply softmax to logits to get probabilities
     probs = torch.nn.functional.softmax(pred, dim=1)
+    batch_size = pred.size(0)
+    num_classes = pred.size(1)
     
-    # Select the probabilities corresponding to the target class
-    target_probs = probs.gather(1, target.unsqueeze(1)).squeeze(1)  # Shape: [batch_size]
+    # Convert target to one-hot but with cumulative probabilities
+    # For example, if target is 3, we want [1, 1, 1, 1, 0]
+    target_one_hot = torch.zeros_like(pred)
+    for i in range(num_classes):
+        target_one_hot[:, i] = (target >= i).float()
     
-    # Compute the focal loss modulation factor (1 - p_t)^γ
-    focal_weight = (1 - target_probs) ** gamma
+    # Calculate the ordinal loss with distance penalty
+    distances = torch.abs(torch.arange(num_classes, device=pred.device).unsqueeze(0) - 
+                         target.unsqueeze(1)).float()
+    distance_weights = 1 + distances  # Linear penalty for distance from true class
     
-    # Compute the cross-entropy loss for the target class
-    ce_loss = -torch.log(target_probs + 1e-8)  # Shape: [batch_size]
-
+    # Compute focal weights for each class prediction
+    focal_weights = torch.abs(target_one_hot - probs) ** gamma
+    
+    # Compute the binary cross entropy for each ordinal level
+    bce_loss = -(target_one_hot * torch.log(probs + 1e-8) + 
+                 (1 - target_one_hot) * torch.log(1 - probs + 1e-8))
+    
+    # Apply distance weighting and focal weighting
+    weighted_loss = distance_weights * focal_weights * bce_loss
+    
     # Apply alpha (class weighting) if provided
     if alpha is not None:
-        alpha = torch.tensor(alpha, device=pred.device)  # Ensure alpha is on the same device
-        class_weights = alpha.gather(0, target)  # Get weights for the true classes
-        loss = focal_weight * class_weights * ce_loss
-    else:
-        loss = focal_weight * ce_loss
-
-    # Return the mean loss over the batch
-    return loss.mean()
+        alpha = torch.tensor(alpha, device=pred.device)
+        class_weights = alpha.gather(0, target)
+        weighted_loss = weighted_loss * class_weights.unsqueeze(1)
+    
+    return weighted_loss.mean()
 
 def calculate_class_weights(dataset):
     """
@@ -67,7 +77,7 @@ def calculate_class_weights(dataset):
     
     # Normalize weights so minimum weight is 1.0
     min_weight = min(inverse_freqs)
-    normalized_weights = [min(200.0, freq / min_weight) for freq in inverse_freqs]  # Cap at 200
+    normalized_weights = [min(100.0, freq / min_weight) for freq in inverse_freqs]  # Cap at 200
     
     print("\nClass distribution and weights:")
     for i, (count, weight) in enumerate(zip(class_counts, normalized_weights)):
