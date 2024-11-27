@@ -5,8 +5,9 @@ data:
   demographic: "novice"
 
 model:
-  k: 15
-  dropout: 0.6
+  k: 20
+  dropout: 0.5
+  geometric_loss_weight: 0.2
 
 training:
   epochs: 1

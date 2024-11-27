@@ -102,58 +102,70 @@ def train_model(model, optimizer, train_loader, test_loader, device, num_epochs,
     
     print("Starting training...")
     
-    for epoch in range(num_epochs):
-        print(f"\nEpoch {epoch+1}/{num_epochs}")
+    # Add geometric feature loss component
+    def geometric_consistency_loss(features, points):
+        """Additional loss term to ensure geometric feature consistency"""
+        # Calculate pairwise distances in feature space and coordinate space
+        feat_dist = torch.cdist(features, features)
+        coord_dist = torch.cdist(points, points)
         
-        # Training
+        # Normalize distances
+        feat_dist = feat_dist / feat_dist.max()
+        coord_dist = coord_dist / coord_dist.max()
+        
+        # Calculate consistency loss
+        consistency_loss = torch.mean((feat_dist - coord_dist) ** 2)
+        return consistency_loss * 0.1  # weight factor
+    
+    for epoch in range(num_epochs):
         model.train()
         total_train_loss = 0
         total_samples = 0
         
-        # Add progress bar
-        train_pbar = tqdm(train_loader, desc='Training', total=len(train_loader))
+        train_pbar = tqdm(train_loader, desc='Training')
         for data in train_pbar:
-            form_type = data.metadata['form_type']
-            form_number = data.metadata['form_number'][0]
-            train_pbar.set_description(f"Training on {form_type[0].capitalize()} Model {form_number}")
-            
             optimizer.zero_grad()
             data = data.to(device)
+            
+            # Split input features
+            points = data.x[:, :3]  # xyz coordinates
+            geom_features = data.x[:, 3:]  # geometric features
+            
             outputs = model(data)
             
-            # Add debugging prints
-            pred_classes = outputs.argmax(dim=1)
-            print(f"\nPredicted class distribution: {[int((pred_classes == i).sum()) for i in range(5)]}")
-            print(f"Target class distribution: {[int((data.y == i).sum()) for i in range(5)]}")
+            # Add before criterion(outputs, data.y)
+            print(f"outputs shape: {outputs.shape}")
+            print(f"target shape: {data.y.shape}")
             
-            # Calculate cross entropy loss
-            loss = criterion(outputs, data.y)
+            # Calculate main classification loss
+            class_loss = criterion(outputs, data.y)
+            
+            # Add geometric consistency loss
+            geom_loss = geometric_consistency_loss(geom_features, points)
+            
+            # Combined loss
+            loss = class_loss + geom_loss
             
             loss.backward()
             
-            # Calculate and print total gradient magnitude
-            total_grad_magnitude = 0.0
-            for param in model.parameters():
-                if param.grad is not None:
-                    total_grad_magnitude += param.grad.data.norm(2).item()
-            print(f"Total gradient magnitude: {total_grad_magnitude:.6f}")
+            # Print detailed loss components
+            if epoch == 0 or epoch % 5 == 0:
+                print(f"\nLoss components - Classification: {class_loss.item():.4f}, "
+                      f"Geometric: {geom_loss.item():.4f}")
             
-            # Gradient clipping
+            # Gradient clipping and optimization
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
-            
             optimizer.step()
-            
-            # Optional: Print per-layer gradient magnitudes for debugging
-            if epoch == 0 and len(train_pbar) < 5:  # Only for first few batches of first epoch
-                for name, param in model.named_parameters():
-                    if param.grad is not None:
-                        print(f"Layer {name} gradient magnitude: {param.grad.data.norm(2).item():.6f}")
             
             batch_size = data.x.size(0)
             total_train_loss += loss.item() * batch_size
             total_samples += batch_size
             
-            train_pbar.set_postfix({'Loss': f'{loss.item():.4f}'})
+            # Update progress bar with both loss components
+            train_pbar.set_postfix({
+                'Class Loss': f'{class_loss.item():.4f}',
+                'Geom Loss': f'{geom_loss.item():.4f}'
+            })
         
         # Testing
         model.eval()
