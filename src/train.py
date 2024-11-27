@@ -43,7 +43,7 @@ def softmax_focal_loss(pred, target, gamma=2.0, alpha=None):
 
 def calculate_class_weights(dataset):
     """
-    Calculate class weights based on inverse class frequencies
+    Calculate class weights based on inverse class frequencies, capped at 200
     
     Args:
         dataset: PyTorch Dataset object containing all training data
@@ -67,7 +67,7 @@ def calculate_class_weights(dataset):
     
     # Normalize weights so minimum weight is 1.0
     min_weight = min(inverse_freqs)
-    normalized_weights = [freq / min_weight for freq in inverse_freqs]
+    normalized_weights = [min(200.0, freq / min_weight) for freq in inverse_freqs]  # Cap at 200
     
     print("\nClass distribution and weights:")
     for i, (count, weight) in enumerate(zip(class_counts, normalized_weights)):
@@ -127,31 +127,30 @@ def train_model(model, optimizer, train_loader, test_loader, device, num_epochs,
             optimizer.zero_grad()
             data = data.to(device)
             
+            # Print model info for each batch
+            print(f"\nTraining on {data.metadata['form_type'][0].capitalize()} Model {data.metadata['form_number'][0]}")
+            
             # Split input features
             points = data.x[:, :3]  # xyz coordinates
             geom_features = data.x[:, 3:]  # geometric features
             
             outputs = model(data)
             
-            # Add before criterion(outputs, data.y)
-            print(f"outputs shape: {outputs.shape}")
-            print(f"target shape: {data.y.shape}")
+            # Add debugging prints for training (removed 100 batch restriction)
+            pred_classes = outputs.argmax(dim=1)
+            print(f"Training Batch Statistics:")
+            print(f"Raw logits (first sample): {outputs[0][:5]}")
+            print(f"Predicted class distribution: {[int((pred_classes == i).sum()) for i in range(5)]}")
+            print(f"Target class distribution: {[int((data.y == i).sum()) for i in range(5)]}")
             
             # Calculate main classification loss
             class_loss = criterion(outputs, data.y)
             
             # Add geometric consistency loss
             geom_loss = geometric_consistency_loss(geom_features, points)
-            
-            # Combined loss
             loss = class_loss + geom_loss
             
             loss.backward()
-            
-            # Print detailed loss components
-            if epoch == 0 or epoch % 5 == 0:
-                print(f"\nLoss components - Classification: {class_loss.item():.4f}, "
-                      f"Geometric: {geom_loss.item():.4f}")
             
             # Gradient clipping and optimization
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
@@ -183,11 +182,11 @@ def train_model(model, optimizer, train_loader, test_loader, device, num_epochs,
                 batch = batch.to(device)
                 outputs = model(batch)
                 
-                # Add debugging prints
+                # Simplified test debugging prints
                 pred_classes = outputs.argmax(dim=1)
-                print(f"\nTest Predictions - Raw logits: {outputs[0][:5]}")  # Show first 5 logits
-                print(f"Test Predicted class distribution: {[int((pred_classes == i).sum()) for i in range(5)]}")
-                print(f"Test Target class distribution: {[int((batch.y == i).sum()) for i in range(5)]}")
+                print(f"\nTest Batch Statistics:")
+                print(f"Predicted class distribution: {[int((pred_classes == i).sum()) for i in range(5)]}")
+                print(f"Target class distribution: {[int((batch.y == i).sum()) for i in range(5)]}")
                 
                 test_loss = criterion(outputs, batch.y).item()
                 
