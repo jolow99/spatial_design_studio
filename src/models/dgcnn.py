@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import DynamicEdgeConv
 import torch_geometric.nn
+from src.ordinal import OrdinalClassificationHead
 
 class ModifiedDGCNN(torch.nn.Module):
     def __init__(self, num_classes, k=20):
@@ -53,6 +54,12 @@ class ModifiedDGCNN(torch.nn.Module):
             nn.Linear(128, num_classes)
         )
 
+        # Replace the final linear layer with OrdinalClassificationHead
+        self.ordinal_head = OrdinalClassificationHead(
+            in_features=num_classes,  # Changed from 1024 to num_classes
+            num_classes=num_classes
+        )
+
     def forward(self, data):
         # Split features
         xyz = data.x[:, :3]  # Spatial coordinates
@@ -77,5 +84,6 @@ class ModifiedDGCNN(torch.nn.Module):
         combined_features = torch.cat([spatial_features, attended_geom], dim=1)
         
         # Final classification
-        out = self.fusion_layer(combined_features)
-        return out
+        x = self.fusion_layer(combined_features)
+        x = self.ordinal_head(x)
+        return x

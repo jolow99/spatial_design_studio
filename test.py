@@ -6,6 +6,8 @@ from mpl_toolkits.mplot3d import Axes3D
 from src.utils import load_checkpoint, load_config
 from src.models.dgcnn import ModifiedDGCNN
 from src.data_loader import PointCloudDataset, get_train_test_dataloaders
+from sklearn.metrics import confusion_matrix
+import seaborn as sns
 
 def test_and_visualize():
     # Find the latest checkpoint directory
@@ -48,8 +50,8 @@ def test_and_visualize():
         batch_size=1
     )
     
-    # Colors and class names for visualization
-    colors = ['blue', 'green', 'yellow', 'orange', 'red']
+    # Change to a sequential colormap instead of discrete colors
+    cmap = plt.cm.RdYlBu_r  # Red (high) to Blue (low)
     class_names = ['No attention', 'Low', 'Medium-low', 'Medium-high', 'High']
     
     # Create visualization directory with same timestamp as model
@@ -66,49 +68,46 @@ def test_and_visualize():
         batch = batch.to(device)
         with torch.no_grad():
             outputs = model(batch)
-            # Add debugging prints
-            print(f"\nTest Predictions - Raw logits: {outputs[0][:5]}")  # Show first 5 logits
-            print(f"Logits min/max: {outputs.min().item():.4f}/{outputs.max().item():.4f}")
             
-            # Print logits distribution
-            print("\nLogits distribution:")
-            for i in range(5):
-                class_logits = outputs[:, i]
-                print(f"Class {i}: min={class_logits.min().item():.4f}, "
-                      f"max={class_logits.max().item():.4f}, "
-                      f"mean={class_logits.mean().item():.4f}")
-            
+            # Add ordinal-specific metrics
+            pred_probs = torch.softmax(outputs, dim=1)
             pred_classes = outputs.argmax(dim=1).cpu().numpy()
-            print(f"\nPredicted class distribution: {[int((pred_classes == i).sum()) for i in range(5)]}")
-            print(f"Target class distribution: {[int((batch.y.cpu().numpy() == i).sum()) for i in range(5)]}")
-        
+            ground_truth = batch.y.cpu().numpy()
+            
+            # Calculate ordinal-specific metrics
+            mae = np.mean(np.abs(pred_classes - ground_truth))
+            mse = np.mean((pred_classes - ground_truth) ** 2)
+            
+            # Calculate adjacent accuracy (predictions off by at most 1 class)
+            adjacent_correct = np.abs(pred_classes - ground_truth) <= 1
+            adjacent_accuracy = np.mean(adjacent_correct)
+            
         points = batch.x.cpu().numpy()
-        ground_truth = batch.y.cpu().numpy()
         
         # Create visualization
         fig = plt.figure(figsize=(15, 7))
         
-        # Ground truth plot
+        # Ground truth plot - use continuous colormap
         ax1 = fig.add_subplot(121, projection='3d')
+        normalized_truth = ground_truth / 4.0  # Normalize to [0,1]
         scatter1 = ax1.scatter(points[:, 0], points[:, 1], points[:, 2],
-                             c=[colors[int(c)] for c in ground_truth],
-                             s=2)
+                             c=normalized_truth, cmap=cmap, s=2)
         ax1.set_title(f"{form_type.capitalize()} Model {form_number} - Ground Truth")
         
-        # Add legend
-        legend_elements = [plt.Line2D([0], [0], marker='o', color='w',
-                                    markerfacecolor=c, label=class_names[i],
-                                    markersize=10)
-                         for i, c in enumerate(colors)]
-        ax1.legend(handles=legend_elements)
+        # Add colorbar instead of discrete legend
+        cbar1 = plt.colorbar(scatter1, ax=ax1)
+        cbar1.set_ticks([0, 0.25, 0.5, 0.75, 1.0])
+        cbar1.set_ticklabels(class_names)
         
-        # Prediction plot
+        # Prediction plot - use same continuous colormap
         ax2 = fig.add_subplot(122, projection='3d')
+        normalized_preds = pred_classes / 4.0  # Normalize to [0,1]
         scatter2 = ax2.scatter(points[:, 0], points[:, 1], points[:, 2],
-                             c=[colors[int(c)] for c in pred_classes],
-                             s=2)
+                             c=normalized_preds, cmap=cmap, s=2)
         ax2.set_title(f"{form_type.capitalize()} Model {form_number} - Predicted")
-        ax2.legend(handles=legend_elements)
+        cbar2 = plt.colorbar(scatter2, ax=ax2)
+        cbar2.set_ticks([0, 0.25, 0.5, 0.75, 1.0])
+        cbar2.set_ticklabels(class_names)
         
         # Set consistent viewing angles and limits
         for ax in [ax1, ax2]:
@@ -131,25 +130,47 @@ def test_and_visualize():
             ax.set_ylim(mid_y - max_range, mid_y + max_range)
             ax.set_zlim(mid_z - max_range, mid_z + max_range)
         
-        # Add accuracy information
+        # Calculate standard accuracy
         accuracy = np.mean(pred_classes == ground_truth)
-        plt.suptitle(f'Accuracy: {accuracy:.2%}', y=0.95)
+        
+        # Update metrics display
+        metrics_text = (
+            f'Exact Accuracy: {accuracy:.2%}\n'
+            f'Adjacent Accuracy: {adjacent_accuracy:.2%}\n'
+            f'Mean Absolute Error: {mae:.3f}\n'
+            f'Mean Squared Error: {mse:.3f}'
+        )
+        plt.figtext(0.02, 0.98, metrics_text, fontsize=10, va='top')
         
         plt.tight_layout()
         
-        # Update save path to use the timestamped directory
+        # Save main visualization
         save_path = os.path.join(vis_dir, f"{form_type}_model_{form_number}.png")
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"Saved visualization to: {save_path}")
         
-        # Print classification report
+        # Print detailed results
         print(f"\nResults for {form_type.capitalize()} Model {form_number}:")
-        print(f"Overall Accuracy: {accuracy:.2%}")
+        print(f"Exact Accuracy: {accuracy:.2%}")
+        print(f"Adjacent Accuracy: {adjacent_accuracy:.2%}")
+        print(f"Mean Absolute Error: {mae:.3f}")
+        print(f"Mean Squared Error: {mse:.3f}")
         print("\nClass Distribution:")
         for i in range(5):
             print(f"Class {i} ({class_names[i]}):")
             print(f"  Ground Truth: {np.sum(ground_truth == i)}")
             print(f"  Predicted: {np.sum(pred_classes == i)}")
+            
+        # Add confusion matrix visualization
+        cm = confusion_matrix(ground_truth, pred_classes)
+        fig_cm = plt.figure(figsize=(8, 6))
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                   xticklabels=class_names, yticklabels=class_names)
+        plt.title('Confusion Matrix')
+        plt.xlabel('Predicted')
+        plt.ylabel('True')
+        cm_save_path = os.path.join(vis_dir, f"{form_type}_model_{form_number}_confusion.png")
+        plt.savefig(cm_save_path, dpi=300, bbox_inches='tight')
 
 if __name__ == "__main__":
     test_and_visualize()

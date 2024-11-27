@@ -3,27 +3,24 @@ from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 
 def visualize_attention_3d(points, attention_classes, save_path=None):
-    # Define colors for each class
-    colors = ['blue', 'green', 'yellow', 'orange', 'red']
-    class_names = ['No attention', 'Low', 'Medium-low', 'Medium-high', 'High']
+    # Use a sequential colormap instead of discrete colors
+    cmap = plt.cm.RdYlBu_r  # Red (high) to Blue (low)
     
-    # Create color array based on classes
-    point_colors = [colors[cls] for cls in attention_classes]
+    # Normalize classes to [0,1] for colormap
+    normalized_classes = attention_classes / 4.0  # Assuming 5 classes (0-4)
     
     # Create 3D plot
     fig = plt.figure(figsize=(12, 8))
     ax = fig.add_subplot(111, projection='3d')
     
-    # Plot points with colors based on attention class
+    # Plot points with continuous colormap
     scatter = ax.scatter(points[:, 0], points[:, 1], points[:, 2],
-                        c=point_colors, alpha=0.6)
+                        c=normalized_classes, cmap=cmap, alpha=0.6)
     
-    # Add legend
-    legend_elements = [plt.Line2D([0], [0], marker='o', color='w',
-                                 markerfacecolor=c, label=class_names[i],
-                                 markersize=10)
-                      for i, c in enumerate(colors)]
-    ax.legend(handles=legend_elements)
+    # Add colorbar
+    cbar = plt.colorbar(scatter)
+    cbar.set_ticks([0, 0.25, 0.5, 0.75, 1.0])
+    cbar.set_ticklabels(['No attention', 'Low', 'Medium-low', 'Medium-high', 'High'])
     
     plt.title('3D Attention Heatmap')
     

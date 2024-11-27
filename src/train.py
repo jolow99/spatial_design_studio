@@ -3,6 +3,7 @@ import torch
 from src.utils import save_checkpoint
 import torch.nn as nn
 from tqdm import tqdm
+from src.ordinal import ordinal_focal_loss
 
 def softmax_focal_loss(pred, target, gamma=2.0, alpha=None):
     """
@@ -93,12 +94,7 @@ def train_model(model, optimizer, train_loader, test_loader, device, num_epochs,
     # Calculate class weights from training data
     alpha = calculate_class_weights(train_loader.dataset.dataset)  # Access underlying dataset through Subset
     
-    criterion = lambda pred, target: softmax_focal_loss(
-        pred, 
-        target,
-        gamma=2.0,  # Keep the focusing parameter
-        alpha=alpha  # Updated class weights
-    )
+    criterion = ordinal_focal_loss
     
     print("Starting training...")
     
