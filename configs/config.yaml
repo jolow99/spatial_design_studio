@@ -1,7 +1,7 @@
 # configs/config.yaml
 data:
   path: "data"
-  subject: "subject1"
+  subject: "Abram"
   demographic: "novice"
 
 model:

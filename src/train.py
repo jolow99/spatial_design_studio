@@ -170,6 +170,13 @@ def train_model(model, optimizer, train_loader, test_loader, device, num_epochs,
                 
                 batch = batch.to(device)
                 outputs = model(batch)
+                
+                # Add debugging prints
+                pred_classes = outputs.argmax(dim=1)
+                print(f"\nTest Predictions - Raw logits: {outputs[0][:5]}")  # Show first 5 logits
+                print(f"Test Predicted class distribution: {[int((pred_classes == i).sum()) for i in range(5)]}")
+                print(f"Test Target class distribution: {[int((batch.y == i).sum()) for i in range(5)]}")
+                
                 test_loss = criterion(outputs, batch.y).item()
                 
                 batch_size = batch.x.size(0)

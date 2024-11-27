@@ -66,8 +66,21 @@ def test_and_visualize():
         batch = batch.to(device)
         with torch.no_grad():
             outputs = model(batch)
-            predictions = torch.softmax(outputs, dim=1)
-            pred_classes = predictions.argmax(dim=1).cpu().numpy()
+            # Add debugging prints
+            print(f"\nTest Predictions - Raw logits: {outputs[0][:5]}")  # Show first 5 logits
+            print(f"Logits min/max: {outputs.min().item():.4f}/{outputs.max().item():.4f}")
+            
+            # Print logits distribution
+            print("\nLogits distribution:")
+            for i in range(5):
+                class_logits = outputs[:, i]
+                print(f"Class {i}: min={class_logits.min().item():.4f}, "
+                      f"max={class_logits.max().item():.4f}, "
+                      f"mean={class_logits.mean().item():.4f}")
+            
+            pred_classes = outputs.argmax(dim=1).cpu().numpy()
+            print(f"\nPredicted class distribution: {[int((pred_classes == i).sum()) for i in range(5)]}")
+            print(f"Target class distribution: {[int((batch.y.cpu().numpy() == i).sum()) for i in range(5)]}")
         
         points = batch.x.cpu().numpy()
         ground_truth = batch.y.cpu().numpy()

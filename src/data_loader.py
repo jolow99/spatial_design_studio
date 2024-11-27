@@ -27,7 +27,7 @@ class PointCloudDataset(Dataset):
             raise ValueError(f"Subject directory not found: {subject_path}")
             
         for file in os.listdir(subject_path):
-            if not file.endswith('_score.csv'):
+            if not file.endswith('score.csv'):
                 continue
                 
             df = pd.read_csv(os.path.join(subject_path, file))
@@ -37,12 +37,16 @@ class PointCloudDataset(Dataset):
             scores = df['NormalizedScore'].values
             attention_classes = convert_to_classes(scores)
             
+            form_info = file.replace(f"{subject}_", "").replace("score.csv", "")
+            form_type = 'curved' if 'curved' in form_info else 'rect'
+            form_number = int(''.join(filter(str.isdigit, form_info)))
+            
             self.point_clouds.append(points)
             self.attention_classes.append(attention_classes)
             self.metadata.append({
                 'subject': subject,
-                'form_type': 'curved' if 'curved' in file else 'rect',
-                'form_number': int(file.split('_')[0].replace('curved', '').replace('rect', ''))
+                'form_type': form_type,
+                'form_number': form_number
             })
 
     def __len__(self):
