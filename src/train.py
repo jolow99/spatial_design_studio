@@ -31,7 +31,8 @@ def softmax_focal_loss(pred, target, gamma=2.0, alpha=None):
     # Calculate the ordinal loss with distance penalty
     distances = torch.abs(torch.arange(num_classes, device=pred.device).unsqueeze(0) - 
                          target.unsqueeze(1)).float()
-    distance_weights = 1 + distances  # Linear penalty for distance from true class
+    # distance_weights = 1 + distances  # Linear penalty for distance from true class
+    distance_weights = torch.exp(distances) # Exponential penalty for distance from true class
     
     # Compute focal weights for each class prediction
     focal_weights = torch.abs(target_one_hot - probs) ** gamma

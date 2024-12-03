@@ -192,7 +192,7 @@ if __name__ == "__main__":
     data_path = f'data/novice/{subject_name}'
     
     # Example: Compare specific pairs
-    plot_comparison(data_path, subject_name, 15)
+    plot_comparison(data_path, subject_name, 3)
     
     # Or plot in batches
     # for start in range(1, 16, 2):
