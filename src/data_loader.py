@@ -6,9 +6,10 @@ from torch.utils.data import Dataset
 from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader as PyGDataLoader
 import numpy as np
+from src.geometric_features import compute_geometric_features
 
 def convert_to_classes(normalized_scores):
-    bins = [0, 0.25, 0.50, 0.75, 1.0]
+    bins = [0, 0.05, 0.10, 0.2, 1.0]
     classes = np.digitize(normalized_scores, bins) - 1
     # Handle the zero case separately
     classes[normalized_scores == 0] = 0
@@ -18,6 +19,7 @@ class PointCloudDataset(Dataset):
     def __init__(self, data_dir, demographic='novice', subject='subject1'):
         self.point_clouds = []
         self.attention_classes = []
+        self.geometric_features = []
         self.metadata = []
         
         # Construct path to specific subject directory
@@ -33,6 +35,9 @@ class PointCloudDataset(Dataset):
             df = pd.read_csv(os.path.join(subject_path, file))
             points = df[['x', 'y', 'z']].values.astype('float32')
             
+            # Compute geometric features
+            geometric_feats, normals = compute_geometric_features(points)
+            
             # Convert continuous scores to classes
             scores = df['NormalizedScore'].values
             attention_classes = convert_to_classes(scores)
@@ -43,6 +48,7 @@ class PointCloudDataset(Dataset):
             
             self.point_clouds.append(points)
             self.attention_classes.append(attention_classes)
+            self.geometric_features.append(geometric_feats)
             self.metadata.append({
                 'subject': subject,
                 'form_type': form_type,
@@ -53,17 +59,22 @@ class PointCloudDataset(Dataset):
         return len(self.point_clouds)
 
     def __getitem__(self, idx):
-        points = torch.tensor(self.point_clouds[idx])
-        classes = torch.tensor(self.attention_classes[idx], dtype=torch.long)
+        points = self.point_clouds[idx]
+        features = self.geometric_features[idx]
+        classes = self.attention_classes[idx]
+        
+        # Combine point coordinates with geometric features
+        node_features = np.concatenate([points, features], axis=1)
         
         data = Data(
-            x=points,        # [N, 3] Node features
-            y=classes,       # [N] Node-wise class labels
+            x=torch.tensor(node_features, dtype=torch.float32),
+            y=torch.tensor(classes, dtype=torch.long),
+            pos=torch.tensor(points, dtype=torch.float32),  # Original positions
             metadata=self.metadata[idx]
         )
         return data
 
-def get_train_test_dataloaders(dataset, test_models=[1, 15], batch_size=32):
+def get_train_test_dataloaders(dataset, test_models=[2, 14], batch_size=32):
     train_indices = []
     test_indices = []
     

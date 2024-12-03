@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from src.utils import load_checkpoint, load_config
-from src.models.dgcnn import DGCNN
+from src.models.dgcnn import ModifiedDGCNN
 from src.data_loader import PointCloudDataset, get_train_test_dataloaders
 
 def test_and_visualize():
@@ -24,7 +24,7 @@ def test_and_visualize():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     # Initialize model
-    model = DGCNN(k=config['model']['k'], dropout=config['model']['dropout']).to(device)
+    model = ModifiedDGCNN(num_classes=5, k=config['model']['k']).to(device)
     
     # Load best model from latest directory
     checkpoint_path = os.path.join(checkpoint_dir, latest_dir, 'best_model.pt')
@@ -49,7 +49,7 @@ def test_and_visualize():
     )
     
     # Colors and class names for visualization
-    colors = ['blue', 'green', 'yellow', 'orange', 'red']
+    colors = ['lightgray', 'green', 'yellow', 'orange', 'red']
     class_names = ['No attention', 'Low', 'Medium-low', 'Medium-high', 'High']
     
     # Create visualization directory with same timestamp as model
@@ -90,23 +90,34 @@ def test_and_visualize():
         
         # Ground truth plot
         ax1 = fig.add_subplot(121, projection='3d')
+        point_colors_gt = [colors[int(c)] for c in ground_truth]
+        point_sizes_gt = [2 if c == 0 else 8 for c in ground_truth]  # Smaller size for 'No attention'
+        point_alphas_gt = [0.4 if c == 0 else 1.0 for c in ground_truth]  # More transparent for 'No attention'
+        
         scatter1 = ax1.scatter(points[:, 0], points[:, 1], points[:, 2],
-                             c=[colors[int(c)] for c in ground_truth],
-                             s=2)
+                               c=point_colors_gt,
+                               s=point_sizes_gt,
+                               alpha=point_alphas_gt)
         ax1.set_title(f"{form_type.capitalize()} Model {form_number} - Ground Truth")
         
         # Add legend
         legend_elements = [plt.Line2D([0], [0], marker='o', color='w',
-                                    markerfacecolor=c, label=class_names[i],
-                                    markersize=10)
-                         for i, c in enumerate(colors)]
+                                      markerfacecolor=c, label=class_names[i],
+                                      markersize=10,
+                                      alpha=1.0 if i > 0 else 0.4)  # Match transparency
+                           for i, c in enumerate(colors)]
         ax1.legend(handles=legend_elements)
         
         # Prediction plot
         ax2 = fig.add_subplot(122, projection='3d')
+        point_colors_pred = [colors[int(c)] for c in pred_classes]
+        point_sizes_pred = [2 if c == 0 else 8 for c in pred_classes]
+        point_alphas_pred = [0.4 if c == 0 else 1.0 for c in pred_classes]
+        
         scatter2 = ax2.scatter(points[:, 0], points[:, 1], points[:, 2],
-                             c=[colors[int(c)] for c in pred_classes],
-                             s=2)
+                               c=point_colors_pred,
+                               s=point_sizes_pred,
+                               alpha=point_alphas_pred)
         ax2.set_title(f"{form_type.capitalize()} Model {form_number} - Predicted")
         ax2.legend(handles=legend_elements)
         

@@ -5,61 +5,77 @@ import torch.nn.functional as F
 from torch_geometric.nn import DynamicEdgeConv
 import torch_geometric.nn
 
-class DGCNN(nn.Module):
-    def __init__(self, k=20, dropout=0.5, num_classes=5):
-        super(DGCNN, self).__init__()
+class ModifiedDGCNN(torch.nn.Module):
+    def __init__(self, num_classes, k=20):
+        super().__init__()
+        
+        # DGCNN path for spatial features (xyz)
         self.k = k
-        self.conv1 = DynamicEdgeConv(nn=nn.Sequential(
-            nn.Linear(6, 64),
-            nn.ReLU(),
-            nn.Linear(64, 64),
-            nn.ReLU(),
-        ), k=k)
+        self.spatial_conv1 = DynamicEdgeConv(nn.Sequential(nn.Linear(6, 64)), k=k, aggr='max')    # input: xyz only
+        self.spatial_conv2 = DynamicEdgeConv(nn.Sequential(nn.Linear(128, 128)), k=k)
+        self.spatial_conv3 = DynamicEdgeConv(nn.Sequential(nn.Linear(256, 256)), k=k)
         
-        self.conv2 = DynamicEdgeConv(nn=nn.Sequential(
-            nn.Linear(128, 128),
+        # Enhanced geometric feature processing
+        self.geom_encoder = nn.Sequential(
+            nn.Linear(6, 32),
             nn.ReLU(),
-            nn.Linear(128, 128),
+            nn.BatchNorm1d(32),
+            nn.Linear(32, 64),
             nn.ReLU(),
-        ), k=k)
-        
-        self.conv3 = DynamicEdgeConv(nn=nn.Sequential(
-            nn.Linear(256, 256),
-            nn.ReLU(),
-            nn.Linear(256, 256),
-            nn.ReLU(),
-        ), k=k)
-        
-        self.conv4 = DynamicEdgeConv(nn=nn.Sequential(
-            nn.Linear(512, 512),
-            nn.ReLU(),
-            nn.Linear(512, 512),
-            nn.ReLU(),
-        ), k=k)
-        
-        self.fc1 = nn.Sequential(
-            nn.Linear(960, 512),
-            nn.ReLU(),
-            nn.Dropout(p=dropout)
+            nn.BatchNorm1d(64)
         )
-        self.fc2 = nn.Sequential(
-            nn.Linear(512, 256),
+        
+        # Separate attention branches for different geometric aspects
+        self.local_attention = nn.Sequential(
+            nn.Linear(64, 32),
             nn.ReLU(),
-            nn.Dropout(p=dropout)
+            nn.Linear(32, 64),
+            nn.Sigmoid()
         )
-        self.fc3 = nn.Linear(256, num_classes)
+        
+        self.global_attention = nn.Sequential(
+            nn.Linear(64, 32),
+            nn.ReLU(),
+            nn.Linear(32, 64),
+            nn.Sigmoid()
+        )
+        
+        # Fusion layers
+        self.fusion_layer = nn.Sequential(
+            nn.Linear(512, 256),  # 448 (DGCNN) + 64 (geom)
+            nn.ReLU(),
+            nn.BatchNorm1d(256),
+            nn.Dropout(0.3),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.BatchNorm1d(128),
+            nn.Dropout(0.3),
+            nn.Linear(128, num_classes)
+        )
 
     def forward(self, data):
-        x, batch = data.x, data.batch
+        # Split features
+        xyz = data.x[:, :3]  # Spatial coordinates
+        geom = data.x[:, 3:] # Geometric features
+        batch = data.batch
         
-        x1 = self.conv1(x, batch)
-        x2 = self.conv2(x1, batch)
-        x3 = self.conv3(x2, batch)
-        x4 = self.conv4(x3, batch)
+        # DGCNN path (spatial learning)
+        s1 = self.spatial_conv1(xyz, batch)
+        s2 = self.spatial_conv2(s1, batch)
+        s3 = self.spatial_conv3(s2, batch)
+        spatial_features = torch.cat([s1, s2, s3], dim=1)  # 448 features
         
-        x = torch.cat((x1, x2, x3, x4), dim=1)
+        # Enhanced geometric processing
+        geom_features = self.geom_encoder(geom)
+        local_weights = self.local_attention(geom_features)
+        global_weights = self.global_attention(torch_geometric.nn.global_mean_pool(geom_features, batch))
         
-        x = self.fc1(x)
-        x = self.fc2(x)
-        x = self.fc3(x)
-        return x
+        # Combine local and global geometric attention
+        attended_geom = geom_features * (local_weights + global_weights[batch])
+        
+        # Combine both paths
+        combined_features = torch.cat([spatial_features, attended_geom], dim=1)
+        
+        # Final classification
+        out = self.fusion_layer(combined_features)
+        return out

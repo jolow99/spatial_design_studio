@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from src.data_loader import PointCloudDataset, get_train_test_dataloaders
-from src.models.dgcnn import DGCNN
+from src.models.dgcnn import ModifiedDGCNN
 from src.train import train_model
 from src.utils import load_config, load_checkpoint
 import yaml
@@ -28,14 +28,14 @@ def main():
     # Get train/test loaders
     train_loader, test_loader = get_train_test_dataloaders(
         dataset,
-        test_models=[1, 15],  # Models to hold out for testing
+        test_models=[3, 13],  # Models to hold out for testing
         batch_size=config['training']['batch_size']
     )
     
     # Initialize model and optimizer
-    model = DGCNN(
-        k=config['model']['k'],
-        dropout=config['model']['dropout']
+    model = ModifiedDGCNN(
+        num_classes=5,
+        k=config['model']['k']
     ).to(device)
     
     optimizer = torch.optim.Adam(

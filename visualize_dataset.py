@@ -117,13 +117,13 @@ def plot_comparison(data_dir, subject_name, form_number):
     plt.show()
 
 if __name__ == "__main__":
-    subject_name = "Abram"  # Change this to "Sean" or "Zixuan" as needed
+    subject_name = "Zixuan"  # Change this to "Sean" or "Zixuan" as needed
     data_path = f'data/novice/{subject_name}'
     
     # Example: Compare specific pairs
-    # plot_comparison(data_path, subject_name, 1)  # Compare first pair of forms
+    plot_comparison(data_path, subject_name, 15)  # Compare first pair of forms
     
     # Or plot in batches
-    for start in range(1, 16, 2):
-        print(f"Plotting forms {start} to {min(start+1, 15)}...")
-        plot_point_clouds_batch(data_path, subject_name, start)
+    # for start in range(1, 16, 2):
+    #     print(f"Plotting forms {start} to {min(start+1, 15)}...")
+    #     plot_point_clouds_batch(data_path, subject_name, start)

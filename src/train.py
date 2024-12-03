@@ -6,44 +6,55 @@ from tqdm import tqdm
 
 def softmax_focal_loss(pred, target, gamma=2.0, alpha=None):
     """
-    Softmax Focal Loss for multiclass classification (adapted for mutually exclusive classes).
+    Ordinal Focal Loss for saliency classification with ordered classes (0-4).
     
     Args:
         pred: Predictions (logits) with shape [batch_size, num_classes].
         target: Ground truth labels with shape [batch_size].
         gamma: Focusing parameter to reduce weight of easy examples.
         alpha: Optional class balancing weights (list or tensor of shape [num_classes]).
-               If None, all classes are treated equally.
     
     Returns:
         Loss value (scalar).
     """
     # Apply softmax to logits to get probabilities
     probs = torch.nn.functional.softmax(pred, dim=1)
+    batch_size = pred.size(0)
+    num_classes = pred.size(1)
     
-    # Select the probabilities corresponding to the target class
-    target_probs = probs.gather(1, target.unsqueeze(1)).squeeze(1)  # Shape: [batch_size]
+    # Convert target to one-hot but with cumulative probabilities
+    # For example, if target is 3, we want [1, 1, 1, 1, 0]
+    target_one_hot = torch.zeros_like(pred)
+    for i in range(num_classes):
+        target_one_hot[:, i] = (target >= i).float()
     
-    # Compute the focal loss modulation factor (1 - p_t)^γ
-    focal_weight = (1 - target_probs) ** gamma
+    # Calculate the ordinal loss with distance penalty
+    distances = torch.abs(torch.arange(num_classes, device=pred.device).unsqueeze(0) - 
+                         target.unsqueeze(1)).float()
+    # distance_weights = 1 + distances  # Linear penalty for distance from true class
+    distance_weights = torch.exp(distances) # Exponential penalty for distance from true class
     
-    # Compute the cross-entropy loss for the target class
-    ce_loss = -torch.log(target_probs + 1e-8)  # Shape: [batch_size]
-
+    # Compute focal weights for each class prediction
+    focal_weights = torch.abs(target_one_hot - probs) ** gamma
+    
+    # Compute the binary cross entropy for each ordinal level
+    bce_loss = -(target_one_hot * torch.log(probs + 1e-8) + 
+                 (1 - target_one_hot) * torch.log(1 - probs + 1e-8))
+    
+    # Apply distance weighting and focal weighting
+    weighted_loss = distance_weights * focal_weights * bce_loss
+    
     # Apply alpha (class weighting) if provided
     if alpha is not None:
-        alpha = torch.tensor(alpha, device=pred.device)  # Ensure alpha is on the same device
-        class_weights = alpha.gather(0, target)  # Get weights for the true classes
-        loss = focal_weight * class_weights * ce_loss
-    else:
-        loss = focal_weight * ce_loss
-
-    # Return the mean loss over the batch
-    return loss.mean()
+        alpha = torch.tensor(alpha, device=pred.device)
+        class_weights = alpha.gather(0, target)
+        weighted_loss = weighted_loss * class_weights.unsqueeze(1)
+    
+    return weighted_loss.mean()
 
 def calculate_class_weights(dataset):
     """
-    Calculate class weights based on inverse class frequencies
+    Calculate class weights based on inverse class frequencies, capped at 200
     
     Args:
         dataset: PyTorch Dataset object containing all training data
@@ -67,7 +78,7 @@ def calculate_class_weights(dataset):
     
     # Normalize weights so minimum weight is 1.0
     min_weight = min(inverse_freqs)
-    normalized_weights = [freq / min_weight for freq in inverse_freqs]
+    normalized_weights = [min(100.0, freq / min_weight) for freq in inverse_freqs]  # Cap at 200
     
     print("\nClass distribution and weights:")
     for i, (count, weight) in enumerate(zip(class_counts, normalized_weights)):
@@ -103,57 +114,46 @@ def train_model(model, optimizer, train_loader, test_loader, device, num_epochs,
     print("Starting training...")
     
     for epoch in range(num_epochs):
-        print(f"\nEpoch {epoch+1}/{num_epochs}")
-        
-        # Training
         model.train()
         total_train_loss = 0
         total_samples = 0
         
-        # Add progress bar
-        train_pbar = tqdm(train_loader, desc='Training', total=len(train_loader))
+        train_pbar = tqdm(train_loader, desc='Training')
         for data in train_pbar:
-            form_type = data.metadata['form_type']
-            form_number = data.metadata['form_number'][0]
-            train_pbar.set_description(f"Training on {form_type[0].capitalize()} Model {form_number}")
-            
             optimizer.zero_grad()
             data = data.to(device)
-            outputs = model(data)
             
-            # Add debugging prints
+            # Print model info for each batch
+            print(f"\nTraining on {data.metadata['form_type'][0].capitalize()} Model {data.metadata['form_number'][0]}")
+            
+            # Split input features
+            points = data.x[:, :3]  # xyz coordinates
+            geom_features = data.x[:, 3:]  # geometric features
+            
+            outputs = model(data)
+        
             pred_classes = outputs.argmax(dim=1)
-            print(f"\nPredicted class distribution: {[int((pred_classes == i).sum()) for i in range(5)]}")
+            print(f"Training Batch Statistics:")
+            print(f"Raw logits (first sample): {outputs[0][:5]}")
+            print(f"Predicted class distribution: {[int((pred_classes == i).sum()) for i in range(5)]}")
             print(f"Target class distribution: {[int((data.y == i).sum()) for i in range(5)]}")
             
-            # Calculate cross entropy loss
+            # Calculate main classification loss
             loss = criterion(outputs, data.y)
-            
             loss.backward()
             
-            # Calculate and print total gradient magnitude
-            total_grad_magnitude = 0.0
-            for param in model.parameters():
-                if param.grad is not None:
-                    total_grad_magnitude += param.grad.data.norm(2).item()
-            print(f"Total gradient magnitude: {total_grad_magnitude:.6f}")
-            
-            # Gradient clipping
+            # Gradient clipping and optimization
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
-            
             optimizer.step()
-            
-            # Optional: Print per-layer gradient magnitudes for debugging
-            if epoch == 0 and len(train_pbar) < 5:  # Only for first few batches of first epoch
-                for name, param in model.named_parameters():
-                    if param.grad is not None:
-                        print(f"Layer {name} gradient magnitude: {param.grad.data.norm(2).item():.6f}")
             
             batch_size = data.x.size(0)
             total_train_loss += loss.item() * batch_size
             total_samples += batch_size
             
-            train_pbar.set_postfix({'Loss': f'{loss.item():.4f}'})
+            # Update progress bar with only the classification loss
+            train_pbar.set_postfix({
+                'Class Loss': f'{loss.item():.4f}'
+            })
         
         # Testing
         model.eval()
@@ -171,11 +171,11 @@ def train_model(model, optimizer, train_loader, test_loader, device, num_epochs,
                 batch = batch.to(device)
                 outputs = model(batch)
                 
-                # Add debugging prints
+                # Simplified test debugging prints
                 pred_classes = outputs.argmax(dim=1)
-                print(f"\nTest Predictions - Raw logits: {outputs[0][:5]}")  # Show first 5 logits
-                print(f"Test Predicted class distribution: {[int((pred_classes == i).sum()) for i in range(5)]}")
-                print(f"Test Target class distribution: {[int((batch.y == i).sum()) for i in range(5)]}")
+                print(f"\nTest Batch Statistics:")
+                print(f"Predicted class distribution: {[int((pred_classes == i).sum()) for i in range(5)]}")
+                print(f"Target class distribution: {[int((batch.y == i).sum()) for i in range(5)]}")
                 
                 test_loss = criterion(outputs, batch.y).item()
                 
