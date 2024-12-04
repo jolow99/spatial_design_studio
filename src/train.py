@@ -5,45 +5,54 @@ import torch.nn as nn
 from tqdm import tqdm
 import csv
 import os
+from tabulate import tabulate
+import numpy as np
+from sklearn.metrics import f1_score
 
 def softmax_focal_loss(pred, target, gamma=2.0, alpha=None):
     """
-    Ordinal Focal Loss for saliency classification with ordered classes (0-4).
+    Modified Ordinal Focal Loss for saliency classification with ordered classes (0-4).
+    Uses triangular encoding to better represent ordinal relationships.
     
     Args:
-        pred: Predictions (logits) with shape [batch_size, num_classes].
-        target: Ground truth labels with shape [batch_size].
-        gamma: Focusing parameter to reduce weight of easy examples.
-        alpha: Optional class balancing weights (list or tensor of shape [num_classes]).
-    
-    Returns:
-        Loss value (scalar).
+        pred: Predictions (logits) with shape [batch_size, num_classes]
+        target: Ground truth labels with shape [batch_size]
+        gamma: Focusing parameter
+        alpha: Class balancing weights
     """
-    # Apply softmax to logits to get probabilities
     probs = torch.nn.functional.softmax(pred, dim=1)
     batch_size = pred.size(0)
     num_classes = pred.size(1)
     
-    # Convert target to one-hot but with cumulative probabilities
-    # For example, if target is 3, we want [1, 1, 1, 1, 0]
-    target_one_hot = torch.zeros_like(pred)
+    # Create triangular ordinal encoding
+    # For example, if target is 3:
+    # [0.25, 0.5, 0.75, 1.0, 0.0] instead of [1, 1, 1, 1, 0]
+    target_ordinal = torch.zeros_like(pred)
     for i in range(num_classes):
-        target_one_hot[:, i] = (target >= i).float()
+        # Points up to target get increasing probability
+        target_ordinal[:, i] = torch.where(
+            target >= i,
+            (1.0 + i) / (target + 1.0),  # Increasing values up to 1.0 at target
+            torch.where(
+                target + 1 == i,
+                0.25,  # Small probability for next class
+                0.0    # Zero for classes far beyond target
+            )
+        )
     
-    # Calculate the ordinal loss with distance penalty
+    # Calculate distances with linear penalty
     distances = torch.abs(torch.arange(num_classes, device=pred.device).unsqueeze(0) - 
                          target.unsqueeze(1)).float()
-    # distance_weights = 1 + distances  # Linear penalty for distance from true class
-    distance_weights = torch.exp(distances) # Exponential penalty for distance from true class
+    distance_weights = 1 + distances  # Linear penalty instead of exponential
     
-    # Compute focal weights for each class prediction
-    focal_weights = torch.abs(target_one_hot - probs) ** gamma
+    # Compute focal weights
+    focal_weights = torch.abs(target_ordinal - probs) ** gamma
     
-    # Compute the binary cross entropy for each ordinal level
-    bce_loss = -(target_one_hot * torch.log(probs + 1e-8) + 
-                 (1 - target_one_hot) * torch.log(1 - probs + 1e-8))
+    # Binary cross entropy with ordinal targets
+    bce_loss = -(target_ordinal * torch.log(probs + 1e-8) + 
+                 (1 - target_ordinal) * torch.log(1 - probs + 1e-8))
     
-    # Apply distance weighting and focal weighting
+    # Apply distance and focal weighting
     weighted_loss = distance_weights * focal_weights * bce_loss
     
     # Apply alpha (class weighting) if provided
@@ -136,6 +145,28 @@ def train_model(model, optimizer, train_loader, test_loader, device, num_epochs,
     
     print("Starting training...")
     
+    # Create initial checkpoint to establish timestamp_dir
+    save_checkpoint(
+        model=model,
+        optimizer=optimizer,
+        epoch=-1,  # Initialize at -1 since training hasn't started
+        val_loss=float('inf'),
+        checkpoint_dir=checkpoint_dir,
+        is_best=False,
+        config=config
+    )
+    
+    # Now we can safely access the timestamp_dir
+    train_metrics_path = os.path.join(save_checkpoint.timestamp_dir, 'batch_metrics_train.csv')
+    test_metrics_path = os.path.join(save_checkpoint.timestamp_dir, 'batch_metrics_test.csv')
+    
+    # Initialize CSV files with headers
+    headers = ['Epoch', 'Form_Type', 'Form_Number', 'Class', 'True_Count', 'Predicted_Count', 'F1_Score', 'Accuracy']
+    for path in [train_metrics_path, test_metrics_path]:
+        with open(path, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(headers)
+    
     for epoch in range(num_epochs):
         model.train()
         total_train_loss = 0
@@ -156,10 +187,35 @@ def train_model(model, optimizer, train_loader, test_loader, device, num_epochs,
             outputs = model(data)
         
             pred_classes = outputs.argmax(dim=1)
-            print(f"Training Batch Statistics:")
-            print(f"Raw logits (first sample): {outputs[0][:5]}")
-            print(f"Predicted class distribution: {[int((pred_classes == i).sum()) for i in range(5)]}")
-            print(f"Target class distribution: {[int((data.y == i).sum()) for i in range(5)]}")
+            
+            # Calculate metrics
+            true_classes = data.y.cpu().numpy()
+            pred_classes_np = pred_classes.cpu().numpy()
+            
+            # Calculate all metrics
+            class_distribution = [int((pred_classes == i).sum()) for i in range(5)]
+            target_distribution = [int((data.y == i).sum()) for i in range(5)]
+            f1_scores = f1_score(true_classes, pred_classes_np, average=None, zero_division=0)
+            
+            # Create metrics table
+            metrics_table = []
+            headers = ['Class', 'True Count', 'Predicted', 'F1 Score', 'Accuracy']
+            
+            for i in range(5):
+                total = target_distribution[i]
+                correct = ((pred_classes == i) & (data.y == i)).sum().item()
+                accuracy = f"{(correct/total)*100:.1f}%" if total > 0 else "N/A"
+                
+                metrics_table.append([
+                    f"Class {i}",
+                    target_distribution[i],
+                    class_distribution[i],
+                    f"{f1_scores[i]:.3f}",
+                    accuracy
+                ])
+            
+            print("\nBatch Statistics:")
+            print(tabulate(metrics_table, headers=headers, tablefmt='grid'))
             
             # Calculate main classification loss
             loss = criterion(outputs, data.y)
@@ -177,6 +233,21 @@ def train_model(model, optimizer, train_loader, test_loader, device, num_epochs,
             train_pbar.set_postfix({
                 'Class Loss': f'{loss.item():.4f}'
             })
+            
+            # After calculating metrics_table, save to CSV
+            with open(train_metrics_path, 'a', newline='') as f:
+                writer = csv.writer(f)
+                for row in metrics_table:
+                    writer.writerow([
+                        epoch,
+                        data.metadata['form_type'][0],
+                        data.metadata['form_number'][0],
+                        row[0],  # Class
+                        row[1],  # True Count
+                        row[2],  # Predicted
+                        row[3],  # F1 Score
+                        row[4]   # Accuracy
+                    ])
         
         # Testing
         model.eval()
@@ -194,11 +265,39 @@ def train_model(model, optimizer, train_loader, test_loader, device, num_epochs,
                 batch = batch.to(device)
                 outputs = model(batch)
                 
-                # Simplified test debugging prints
+                # Calculate metrics
                 pred_classes = outputs.argmax(dim=1)
-                print(f"\nTest Batch Statistics:")
-                print(f"Predicted class distribution: {[int((pred_classes == i).sum()) for i in range(5)]}")
-                print(f"Target class distribution: {[int((batch.y == i).sum()) for i in range(5)]}")
+                true_classes = batch.y.cpu().numpy()
+                pred_classes_np = pred_classes.cpu().numpy()
+                
+                # Calculate all metrics
+                class_distribution = [int((pred_classes == i).sum()) for i in range(5)]
+                target_distribution = [int((batch.y == i).sum()) for i in range(5)]
+                
+                # Ensure f1_scores has entries for all classes
+                f1_scores_raw = f1_score(true_classes, pred_classes_np, average=None, zero_division=0)
+                f1_scores = np.zeros(5)  # Initialize array for all 5 classes
+                f1_scores[:len(f1_scores_raw)] = f1_scores_raw  # Fill with calculated scores
+                
+                # Create metrics table
+                metrics_table = []
+                headers = ['Class', 'True Count', 'Predicted', 'F1 Score', 'Accuracy']
+                
+                for i in range(5):
+                    total = target_distribution[i]
+                    correct = ((pred_classes == i) & (batch.y == i)).sum().item()
+                    accuracy = f"{(correct/total)*100:.1f}%" if total > 0 else "N/A"
+                    
+                    metrics_table.append([
+                        f"Class {i}",
+                        target_distribution[i],
+                        class_distribution[i],
+                        f"{f1_scores[i]:.3f}",
+                        accuracy
+                    ])
+                
+                print(f"\nTest Statistics for {form_type[0].capitalize()} Model {form_number}:")
+                print(tabulate(metrics_table, headers=headers, tablefmt='grid'))
                 
                 test_loss = criterion(outputs, batch.y).item()
                 
@@ -207,6 +306,21 @@ def train_model(model, optimizer, train_loader, test_loader, device, num_epochs,
                 test_samples += batch_size
                 
                 test_pbar.set_postfix({'Loss': f'{test_loss:.4f}'})
+                
+                # After calculating metrics_table, save to CSV
+                with open(test_metrics_path, 'a', newline='') as f:
+                    writer = csv.writer(f)
+                    for row in metrics_table:
+                        writer.writerow([
+                            epoch,
+                            batch.metadata['form_type'][0],
+                            batch.metadata['form_number'][0],
+                            row[0],  # Class
+                            row[1],  # True Count
+                            row[2],  # Predicted
+                            row[3],  # F1 Score
+                            row[4]   # Accuracy
+                        ])
         
         # Calculate averages
         avg_train_loss = total_train_loss / total_samples

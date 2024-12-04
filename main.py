@@ -28,7 +28,7 @@ def main():
     # Get train/test loaders
     train_loader, test_loader = get_train_test_dataloaders(
         dataset,
-        test_models=[3, 13],  # Models to hold out for testing
+        test_models=[1, 15],  # Models to hold out for testing
         batch_size=config['training']['batch_size']
     )
     

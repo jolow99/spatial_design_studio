@@ -9,7 +9,7 @@ import numpy as np
 from src.geometric_features import compute_geometric_features
 
 def convert_to_classes(normalized_scores):
-    bins = [0, 0.05, 0.10, 0.2, 1.0]
+    bins = [0, 0.001, 0.02, 0.045, 0.1]
     classes = np.digitize(normalized_scores, bins) - 1
     # Handle the zero case separately
     classes[normalized_scores == 0] = 0
