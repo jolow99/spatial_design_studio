@@ -3,6 +3,8 @@ import torch
 from src.utils import save_checkpoint
 import torch.nn as nn
 from tqdm import tqdm
+import csv
+import os
 
 def softmax_focal_loss(pred, target, gamma=2.0, alpha=None):
     """
@@ -78,7 +80,7 @@ def calculate_class_weights(dataset):
     
     # Normalize weights so minimum weight is 1.0
     min_weight = min(inverse_freqs)
-    normalized_weights = [min(100.0, freq / min_weight) for freq in inverse_freqs]  # Cap at 200
+    normalized_weights = [min(200.0, freq / min_weight) for freq in inverse_freqs]  # Cap at 200
     
     print("\nClass distribution and weights:")
     for i, (count, weight) in enumerate(zip(class_counts, normalized_weights)):
@@ -86,7 +88,28 @@ def calculate_class_weights(dataset):
     
     return normalized_weights
 
+def save_losses_to_csv(train_losses, test_losses, save_dir):
+    """
+    Save training and testing losses to a CSV file.
+    
+    Args:
+        train_losses: List of average training losses per epoch
+        test_losses: List of average testing losses per epoch
+        save_dir: Directory to save the CSV file
+    """
+    csv_path = os.path.join(save_dir, 'losses.csv')
+    with open(csv_path, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(['Epoch', 'Training Loss', 'Testing Loss'])
+        for epoch, (train_loss, test_loss) in enumerate(zip(train_losses, test_losses), start=1):
+            writer.writerow([epoch, train_loss, test_loss])
+    print(f"Losses saved to {csv_path}")
+
 def train_model(model, optimizer, train_loader, test_loader, device, num_epochs, checkpoint_dir, config=None):
+    # Initialize lists to store losses
+    train_losses = []
+    test_losses = []
+    
     # Add learning rate scheduler
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer,
@@ -107,7 +130,7 @@ def train_model(model, optimizer, train_loader, test_loader, device, num_epochs,
     criterion = lambda pred, target: softmax_focal_loss(
         pred, 
         target,
-        gamma=2.0,  # Keep the focusing parameter
+        gamma=4.0,  # Keep the focusing parameter
         alpha=alpha  # Updated class weights
     )
     
@@ -210,5 +233,12 @@ def train_model(model, optimizer, train_loader, test_loader, device, num_epochs,
         
         # Update learning rate
         scheduler.step(avg_test_loss)
+        
+        # After calculating averages, add these lines:
+        train_losses.append(avg_train_loss)
+        test_losses.append(avg_test_loss)
+    
+    # Save losses to CSV after training completes
+    save_losses_to_csv(train_losses, test_losses, save_checkpoint.timestamp_dir)
     
     return best_test_loss
