@@ -156,11 +156,15 @@ def test_and_visualize():
         # Print classification report
         print(f"\nResults for {form_type.capitalize()} Model {form_number}:")
         print(f"Overall Accuracy: {accuracy:.2%}")
-        print("\nClass Distribution:")
+        print("\nClass Distribution and Accuracies:")
         for i in range(5):
+            class_mask = (ground_truth == i)
+            class_accuracy = np.mean(pred_classes[class_mask] == ground_truth[class_mask]) if np.any(class_mask) else 0
+            
             print(f"Class {i} ({class_names[i]}):")
             print(f"  Ground Truth: {np.sum(ground_truth == i)}")
             print(f"  Predicted: {np.sum(pred_classes == i)}")
+            print(f"  Accuracy: {class_accuracy:.2%}")
 
 if __name__ == "__main__":
     test_and_visualize()
