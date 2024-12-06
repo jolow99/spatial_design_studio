@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from src.utils import load_checkpoint, load_config
 from src.models.dgcnn import ModifiedDGCNN
-from src.data_loader import PointCloudDataset, get_train_test_dataloaders
+from src.data_loader import PointCloudDataset, get_dataloader
 
 def test_and_visualize():
     # Find the latest checkpoint directory
@@ -41,12 +41,8 @@ def test_and_visualize():
         subject=config['data']['subject']
     )
     
-    # Get test loader with specific test models
-    _, test_loader = get_train_test_dataloaders(
-        dataset,
-        test_models=[1, 15],
-        batch_size=1
-    )
+    # Get dataloader with batch size 1 for visualization
+    dataloader = get_dataloader(dataset, batch_size=1)
     
     # Colors and class names for visualization
     colors = ['lightgray', 'green', 'yellow', 'orange', 'red']
@@ -58,7 +54,7 @@ def test_and_visualize():
     print(f"Saving visualizations to: {vis_dir}")
     
     # Test and visualize each model
-    for batch in test_loader:
+    for batch in dataloader:
         form_type = batch.metadata['form_type'][0]
         form_number = batch.metadata['form_number'][0]
         
@@ -86,7 +82,7 @@ def test_and_visualize():
         ground_truth = batch.y.cpu().numpy()
         
         # Create visualization
-        fig = plt.figure(figsize=(15, 7))
+        fig = plt.figure(figsize=(15, 10))  # Increased figure height to accommodate metrics
         
         # Ground truth plot
         ax1 = fig.add_subplot(121, projection='3d')
@@ -142,29 +138,28 @@ def test_and_visualize():
             ax.set_ylim(mid_y - max_range, mid_y + max_range)
             ax.set_zlim(mid_z - max_range, mid_z + max_range)
         
-        # Add accuracy information
+        # Add metrics text below the plots
         accuracy = np.mean(pred_classes == ground_truth)
-        plt.suptitle(f'Accuracy: {accuracy:.2%}', y=0.95)
-        
-        plt.tight_layout()
-        
-        # Update save path to use the timestamped directory
-        save_path = os.path.join(vis_dir, f"{form_type}_model_{form_number}.png")
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"Saved visualization to: {save_path}")
-        
-        # Print classification report
-        print(f"\nResults for {form_type.capitalize()} Model {form_number}:")
-        print(f"Overall Accuracy: {accuracy:.2%}")
-        print("\nClass Distribution and Accuracies:")
+        metrics_text = f"Overall Accuracy: {accuracy:.2%}\n\nClass Distribution and Accuracies:\n"
         for i in range(5):
             class_mask = (ground_truth == i)
             class_accuracy = np.mean(pred_classes[class_mask] == ground_truth[class_mask]) if np.any(class_mask) else 0
-            
-            print(f"Class {i} ({class_names[i]}):")
-            print(f"  Ground Truth: {np.sum(ground_truth == i)}")
-            print(f"  Predicted: {np.sum(pred_classes == i)}")
-            print(f"  Accuracy: {class_accuracy:.2%}")
+            metrics_text += f"Class {class_names[i]}:\n"
+            metrics_text += f"  Ground Truth: {np.sum(ground_truth == i)}, "
+            metrics_text += f"Predicted: {np.sum(pred_classes == i)}, "
+            metrics_text += f"Accuracy: {class_accuracy:.2%}\n"
+
+        # Add text box with metrics
+        plt.figtext(0.1, 0.02, metrics_text, fontsize=8, va='bottom', 
+                   bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+        
+        # Adjust layout to make room for metrics
+        plt.subplots_adjust(bottom=0.25)  # Adjust this value based on the amount of text
+        
+        # Remove the print statements for metrics
+        save_path = os.path.join(vis_dir, f"{form_type}_model_{form_number}.png")
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"Saved visualization to: {save_path}")
 
 if __name__ == "__main__":
     test_and_visualize()

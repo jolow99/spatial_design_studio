@@ -1,15 +1,15 @@
 # configs/config.yaml
 data:
   path: "data"
-  subject: "abram"
-  demographic: "novice"
+  subject: "Term9ASD"
+  demographic: "expert"
 
 model:
   k: 12
   dropout: 0.0
 
 training:
-  epochs: 50
+  epochs: 5
   batch_size: 1
   learning_rate: 0.0003
   checkpoint_dir: "checkpoints/"

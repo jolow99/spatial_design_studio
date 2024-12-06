@@ -74,21 +74,5 @@ class PointCloudDataset(Dataset):
         )
         return data
 
-def get_train_test_dataloaders(dataset, test_models=[2, 14], batch_size=32):
-    train_indices = []
-    test_indices = []
-    
-    for idx, data in enumerate(dataset):
-        form_number = dataset.metadata[idx]['form_number']
-        if form_number in test_models:
-            test_indices.append(idx)
-        else:
-            train_indices.append(idx)
-    
-    train_subset = torch.utils.data.Subset(dataset, train_indices)
-    test_subset = torch.utils.data.Subset(dataset, test_indices)
-    
-    train_loader = PyGDataLoader(train_subset, batch_size=batch_size, shuffle=True)
-    test_loader = PyGDataLoader(test_subset, batch_size=batch_size)
-    
-    return train_loader, test_loader
+def get_dataloader(dataset, batch_size=32):
+    return PyGDataLoader(dataset, batch_size=batch_size, shuffle=True)
