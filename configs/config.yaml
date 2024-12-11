@@ -3,7 +3,7 @@ data:
   path: "data"
   subject_type: "novice"  # Options: "novice" or "expert"
   subject_id: "1"         # Options: "1", "2", "3"
-  config_type: "et_eeg_mult"       # Options: "et", "et_eeg_mult", "et_eeg_sum"
+  config_type: "eeg"       # Options: "et", "eeg"
 
 model:
   k: 12
@@ -11,7 +11,7 @@ model:
   gamma: 2.0
 
 training:
-  epochs: 30
+  epochs: 3
   batch_size: 1
   learning_rate: 0.0003
   checkpoint_dir: "checkpoints/"

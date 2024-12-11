@@ -8,14 +8,38 @@ from torch_geometric.loader import DataLoader as PyGDataLoader
 import numpy as np
 from src.geometric_features import compute_geometric_features
 
-def convert_to_classes(normalized_scores):
-     # Print some statistics about the input scores
-    print(f"Score range: {normalized_scores.min():.4f} to {normalized_scores.max():.4f}")
+def convert_to_classes(normalized_scores, config_type):
+    if config_type == 'eeg':
+        class_ranges = [
+            "Class 0: x ≤ -0.5 (Very negative)",
+            "Class 1: -0.5 < x ≤ 0 (Slightly negative)",
+            "Class 2: x = 0 (No attention)",
+            "Class 3: 0 < x ≤ 0.5 (Slightly positive)",
+            "Class 4: x > 0.5 (Very positive)"
+        ]
+        
+        classes = np.zeros_like(normalized_scores, dtype=int)
+        classes[normalized_scores <= -0.5] = 0
+        classes[(-0.5 < normalized_scores) & (normalized_scores <= 0)] = 1
+        classes[normalized_scores == 0] = 2
+        classes[(0 < normalized_scores) & (normalized_scores <= 0.5)] = 3
+        classes[normalized_scores > 0.5] = 4
+    elif config_type == 'et':
+        class_ranges = [
+            "Class 0: x = 0 (No Attention)",
+            "Class 1: 0 < x ≤ 0.025 (Very Low)",
+            "Class 2: 0.025 < x ≤ 0.050 (Low)",
+            "Class 3: 0.050 < x ≤ 0.1 (Medium)",
+            "Class 4: x > 0.1 (High)"
+        ]
+        
+        classes = np.zeros_like(normalized_scores, dtype=int)
+        classes[normalized_scores == 0] = 0
+        classes[(0 < normalized_scores) & (normalized_scores <= 0.025)] = 1
+        classes[(0.025 < normalized_scores) & (normalized_scores <= 0.050)] = 2
+        classes[(0.050 < normalized_scores) & (normalized_scores <= 0.1)] = 3
+        classes[normalized_scores > 0.1] = 4
     
-    bins = [0, 0.001, 0.02, 0.045, 0.1]
-    classes = np.digitize(normalized_scores, bins) - 1
-    # Handle the zero case separately
-    classes[normalized_scores == 0] = 0
     return classes
 
 class PointCloudDataset(Dataset):
@@ -55,9 +79,9 @@ class PointCloudDataset(Dataset):
             
             # Convert continuous scores to classes
             # Use NormalizedCombinedScore for et_eeg_mult and et_eeg_sum configs
-            score_column = 'NormalizedCombinedScore' if 'et_eeg' in config_type else 'NormalizedScore'
+            score_column = 'NormalizedEEGScore' if 'eeg' in config_type else 'NormalizedScore'
             scores = df[score_column].values
-            attention_classes = convert_to_classes(scores)
+            attention_classes = convert_to_classes(scores, config_type)
             
             self.point_clouds.append(points)
             self.attention_classes.append(attention_classes)

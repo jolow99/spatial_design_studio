@@ -45,9 +45,19 @@ def test_and_visualize():
     # Get dataloader with batch size 1 for visualization
     dataloader = get_dataloader(dataset, batch_size=1)
     
-    # Colors and class names for visualization
-    colors = ['lightgray', 'green', 'yellow', 'orange', 'red']
-    class_names = ['No attention', 'Low', 'Medium-low', 'Medium-high', 'High']
+    # Colors and class names for visualization - will be set based on config type
+    colors = None
+    class_names = None
+    
+    # Set colors and class names based on config type
+    if config['data']['config_type'] == 'et':
+        colors = ['lightgray', 'green', 'yellow', 'orange', 'red']
+        class_names = ['No attention', 'Very Low', 'Low', 'Medium', 'High']
+    elif config['data']['config_type'] == 'eeg':
+        colors = ['red', 'orange', 'lightgray', 'yellowgreen', 'green']
+        class_names = ['Very negative', 'Slightly negative', 'No attention', 'Slightly positive', 'Very positive']
+    else:
+        raise ValueError(f"Unsupported config type: {config['data']['config_type']}")
     
     # Create visualization directory with same timestamp as model
     vis_dir = os.path.join("visualizations", latest_dir)
@@ -58,6 +68,7 @@ def test_and_visualize():
     for batch in dataloader:
         form_type = batch.metadata['form_type'][0]
         form_number = batch.metadata['form_number'][0]
+        config_type = batch.metadata['config_type'][0]
         
         # Get predictions
         batch = batch.to(device)
@@ -88,34 +99,43 @@ def test_and_visualize():
         # Ground truth plot
         ax1 = fig.add_subplot(121, projection='3d')
         point_colors_gt = [colors[int(c)] for c in ground_truth]
-        point_sizes_gt = [2 if c == 0 else 8 for c in ground_truth]  # Smaller size for 'No attention'
-        point_alphas_gt = [0.4 if c == 0 else 1.0 for c in ground_truth]  # More transparent for 'No attention'
+        # Adjust point sizes and alphas based on config type
+        if config_type == 'et':
+            point_sizes_gt = [2 if c == 0 else 8 for c in ground_truth]  # Smaller size for 'No attention'
+            point_alphas_gt = [0.4 if c == 0 else 1.0 for c in ground_truth]  # More transparent for 'No attention'
+        else:  # eeg
+            point_sizes_gt = [8 for _ in ground_truth]  # Consistent size for all points
+            point_alphas_gt = [1.0 for _ in ground_truth]  # Consistent alpha for all points
         
         scatter1 = ax1.scatter(points[:, 0], points[:, 1], points[:, 2],
-                               c=point_colors_gt,
-                               s=point_sizes_gt,
-                               alpha=point_alphas_gt)
-        ax1.set_title(f"{form_type.capitalize()} Model {form_number} - Ground Truth")
+                             c=point_colors_gt,
+                             s=point_sizes_gt,
+                             alpha=point_alphas_gt)
+        ax1.set_title(f"{form_type.capitalize()} Model {form_number} - Ground Truth ({config_type.upper()})")
         
         # Add legend
         legend_elements = [plt.Line2D([0], [0], marker='o', color='w',
-                                      markerfacecolor=c, label=class_names[i],
-                                      markersize=10,
-                                      alpha=1.0 if i > 0 else 0.4)  # Match transparency
-                           for i, c in enumerate(colors)]
+                                    markerfacecolor=c, label=class_names[i],
+                                    markersize=10,
+                                    alpha=1.0 if (config_type == 'eeg' or i > 0) else 0.4)
+                         for i, c in enumerate(colors)]
         ax1.legend(handles=legend_elements)
         
         # Prediction plot
         ax2 = fig.add_subplot(122, projection='3d')
         point_colors_pred = [colors[int(c)] for c in pred_classes]
-        point_sizes_pred = [2 if c == 0 else 8 for c in pred_classes]
-        point_alphas_pred = [0.4 if c == 0 else 1.0 for c in pred_classes]
+        if config_type == 'et':
+            point_sizes_pred = [2 if c == 0 else 8 for c in pred_classes]
+            point_alphas_pred = [0.4 if c == 0 else 1.0 for c in pred_classes]
+        else:  # eeg
+            point_sizes_pred = [8 for _ in pred_classes]
+            point_alphas_pred = [1.0 for _ in pred_classes]
         
         scatter2 = ax2.scatter(points[:, 0], points[:, 1], points[:, 2],
-                               c=point_colors_pred,
-                               s=point_sizes_pred,
-                               alpha=point_alphas_pred)
-        ax2.set_title(f"{form_type.capitalize()} Model {form_number} - Predicted")
+                             c=point_colors_pred,
+                             s=point_sizes_pred,
+                             alpha=point_alphas_pred)
+        ax2.set_title(f"{form_type.capitalize()} Model {form_number} - Predicted ({config_type.upper()})")
         ax2.legend(handles=legend_elements)
         
         # Set consistent viewing angles and limits
