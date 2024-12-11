@@ -1,0 +1,6 @@
+Epoch,Form_Type,Form_Number,Class,True_Count,Predicted_Count,F1_Score,Accuracy
+0,rect,9,Class 0,2635,2786,0.191,19.7%
+0,rect,9,Class 1,191,3504,0.029,27.7%
+0,rect,9,Class 2,12135,3401,0.354,22.7%
+0,rect,9,Class 3,29,3183,0.002,10.3%
+0,rect,9,Class 4,10,2126,0.002,20.0%
