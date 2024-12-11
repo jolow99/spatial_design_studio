@@ -2,7 +2,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from src.data_loader import PointCloudDataset, get_train_test_dataloaders
+from src.data_loader import PointCloudDataset, get_dataloader
 from src.models.dgcnn import ModifiedDGCNN
 from src.train import train_model
 from src.utils import load_config, load_checkpoint
@@ -12,23 +12,36 @@ import os
 def main():
     # Load configuration
     config = load_config("configs/config.yaml")
-    print("loaded config")
+    print("\nConfiguration loaded:")
+    print(f"Data Settings:")
+    print(f"  • Path: {config['data']['path']}")
+    print(f"  • Subject Type: {config['data']['subject_type']}")
+    print(f"  • Subject ID: {config['data']['subject_id']}")
+    print(f"  • Config Type: {config['data']['config_type']}")
+    print(f"\nModel Settings:")
+    print(f"  • k-nearest neighbors: {config['model']['k']}")
+    print(f"  • Dropout Rate: {config['model']['dropout']}")
+    print(f"\nTraining Settings:")
+    print(f"  • Epochs: {config['training']['epochs']}")
+    print(f"  • Batch Size: {config['training']['batch_size']}")
+    print(f"  • Learning Rate: {config['training']['learning_rate']}")
+    print(f"  • Checkpoint Directory: {config['training']['checkpoint_dir']}")
+    print("\n" + "="*50 + "\n")
 
     # Device configuration
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Load dataset with subject and demographic from config
+    # Load dataset with updated parameters
     dataset = PointCloudDataset(
         data_dir=config['data']['path'],
-        demographic=config['data']['demographic'],
-        subject=config['data']['subject']
+        subject_type=config['data']['subject_type'],
+        subject_id=config['data']['subject_id'],
+        config_type=config['data']['config_type']
     )
 
-    
-    # Get train/test loaders
-    train_loader, test_loader = get_train_test_dataloaders(
+    # Get dataloader for the full dataset
+    dataloader = get_dataloader(
         dataset,
-        test_models=[1, 15],  # Models to hold out for testing
         batch_size=config['training']['batch_size']
     )
     
@@ -43,19 +56,17 @@ def main():
         lr=config['training']['learning_rate']
     )
     
-    # Train model
     best_loss = train_model(
         model=model,
         optimizer=optimizer,
-        train_loader=train_loader,
-        test_loader=test_loader,
+        dataloader=dataloader,
         device=device,
         num_epochs=config['training']['epochs'],
         checkpoint_dir=config['training']['checkpoint_dir'],
         config=config
     )
     
-    print(f"Training complete! Best test loss: {best_loss:.4f}")
+    print(f"Training complete! Best loss: {best_loss:.4f}")
 
 if __name__ == "__main__":
     main()

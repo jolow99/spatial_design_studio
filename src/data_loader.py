@@ -9,6 +9,9 @@ import numpy as np
 from src.geometric_features import compute_geometric_features
 
 def convert_to_classes(normalized_scores):
+     # Print some statistics about the input scores
+    print(f"Score range: {normalized_scores.min():.4f} to {normalized_scores.max():.4f}")
+    
     bins = [0, 0.001, 0.02, 0.045, 0.1]
     classes = np.digitize(normalized_scores, bins) - 1
     # Handle the zero case separately
@@ -16,21 +19,33 @@ def convert_to_classes(normalized_scores):
     return classes
 
 class PointCloudDataset(Dataset):
-    def __init__(self, data_dir, demographic='novice', subject='subject1'):
+    def __init__(self, data_dir, subject_type='novice', subject_id='1', config_type='et'):
         self.point_clouds = []
         self.attention_classes = []
         self.geometric_features = []
         self.metadata = []
         
         # Construct path to specific subject directory
-        subject_path = os.path.join(data_dir, demographic, subject)
+        subject_path = os.path.join(data_dir, subject_type, f"subject_{subject_id}", config_type)
         
         if not os.path.exists(subject_path):
             raise ValueError(f"Subject directory not found: {subject_path}")
             
         for file in os.listdir(subject_path):
-            if not file.endswith('score.csv'):
+            if not file.endswith('.csv'):
                 continue
+            
+            # Extract form type and number from filename
+            # Example: 'curved1.csv' or 'rect1.csv'
+            filename = os.path.splitext(file)[0]  # Remove .csv extension
+            if filename.startswith('curved'):
+                form_type = 'curved'
+                form_number = filename[6:]  # Get number after 'curved'
+            elif filename.startswith('rect'):
+                form_type = 'rect'
+                form_number = filename[4:]  # Get number after 'rect'
+            else:
+                continue  # Skip files that don't match expected pattern
                 
             df = pd.read_csv(os.path.join(subject_path, file))
             points = df[['x', 'y', 'z']].values.astype('float32')
@@ -39,18 +54,18 @@ class PointCloudDataset(Dataset):
             geometric_feats, normals = compute_geometric_features(points)
             
             # Convert continuous scores to classes
-            scores = df['NormalizedScore'].values
+            # Use NormalizedCombinedScore for et_eeg_mult and et_eeg_sum configs
+            score_column = 'NormalizedCombinedScore' if 'et_eeg' in config_type else 'NormalizedScore'
+            scores = df[score_column].values
             attention_classes = convert_to_classes(scores)
-            
-            form_info = file.replace(f"{subject}_", "").replace("score.csv", "")
-            form_type = 'curved' if 'curved' in form_info else 'rect'
-            form_number = int(''.join(filter(str.isdigit, form_info)))
             
             self.point_clouds.append(points)
             self.attention_classes.append(attention_classes)
             self.geometric_features.append(geometric_feats)
             self.metadata.append({
-                'subject': subject,
+                'subject_type': subject_type,
+                'subject_id': subject_id,
+                'config_type': config_type,
                 'form_type': form_type,
                 'form_number': form_number
             })
@@ -74,21 +89,5 @@ class PointCloudDataset(Dataset):
         )
         return data
 
-def get_train_test_dataloaders(dataset, test_models=[2, 14], batch_size=32):
-    train_indices = []
-    test_indices = []
-    
-    for idx, data in enumerate(dataset):
-        form_number = dataset.metadata[idx]['form_number']
-        if form_number in test_models:
-            test_indices.append(idx)
-        else:
-            train_indices.append(idx)
-    
-    train_subset = torch.utils.data.Subset(dataset, train_indices)
-    test_subset = torch.utils.data.Subset(dataset, test_indices)
-    
-    train_loader = PyGDataLoader(train_subset, batch_size=batch_size, shuffle=True)
-    test_loader = PyGDataLoader(test_subset, batch_size=batch_size)
-    
-    return train_loader, test_loader
+def get_dataloader(dataset, batch_size=32):
+    return PyGDataLoader(dataset, batch_size=batch_size, shuffle=True)

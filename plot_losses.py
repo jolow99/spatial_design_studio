@@ -5,21 +5,18 @@ import os
 def plot_loss_curves_from_csv(csv_path):
     epochs = []
     train_losses = []
-    test_losses = []
     
     with open(csv_path, mode='r') as file:
         reader = csv.DictReader(file)
         for row in reader:
             epochs.append(int(row['Epoch']))
             train_losses.append(float(row['Training Loss']))
-            test_losses.append(float(row['Testing Loss']))
     
     plt.figure(figsize=(10, 6))
     plt.plot(epochs, train_losses, label='Training Loss', marker='o')
-    plt.plot(epochs, test_losses, label='Testing Loss', marker='o')
     plt.xlabel('Epoch')
     plt.ylabel('Loss')
-    plt.title('Training and Testing Loss Curves')
+    plt.title('Training Loss Curve')
     plt.legend()
     plt.grid(True)
     plt.show()
