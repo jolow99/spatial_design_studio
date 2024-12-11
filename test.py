@@ -37,8 +37,9 @@ def test_and_visualize():
     # Load dataset
     dataset = PointCloudDataset(
         data_dir=config['data']['path'],
-        demographic=config['data']['demographic'],
-        subject=config['data']['subject']
+        subject_type=config['data']['subject_type'],
+        subject_id=config['data']['subject_id'],
+        config_type=config['data']['config_type']
     )
     
     # Get dataloader with batch size 1 for visualization

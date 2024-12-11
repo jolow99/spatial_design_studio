@@ -137,7 +137,7 @@ def train_model(model, optimizer, dataloader, device, num_epochs, checkpoint_dir
     criterion = lambda pred, target: softmax_focal_loss(
         pred, 
         target,
-        gamma=4.0,  # Keep the focusing parameter
+        gamma=config['model']['gamma'],  # Use gamma from config
         alpha=alpha  # Updated class weights
     )
     
