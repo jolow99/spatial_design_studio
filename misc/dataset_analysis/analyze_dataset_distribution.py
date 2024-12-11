@@ -95,8 +95,13 @@ def analyze_subject_scores(subject_path, config_type='et', all_subjects_data=Non
 
     # Save figures
     output_dir = os.path.dirname(os.path.abspath(__file__))  # Get the directory of this script
-    fig_hist.savefig(os.path.join(output_dir, f'{os.path.basename(subject_path)}_{config_type}_histograms.png'))
-    fig_box.savefig(os.path.join(output_dir, f'{os.path.basename(subject_path)}_{config_type}_boxplot.png'))
+    fig_hist.tight_layout()
+    fig_hist.savefig(os.path.join(output_dir, f'{os.path.basename(subject_path)}_{config_type}_histograms.png'),
+                     bbox_inches='tight',
+                     pad_inches=0.1)
+    fig_box.savefig(os.path.join(output_dir, f'{os.path.basename(subject_path)}_{config_type}_boxplot.png'),
+                    bbox_inches='tight',
+                    pad_inches=0.1)
     plt.close('all')
 
     if all_subjects_data is not None:
@@ -121,11 +126,15 @@ def plot_subject_comparisons(all_subjects_data, config_type, demographic):
     avg_distributions = []
     
     for subject in subjects:
-        distributions = np.array(all_subjects_data[subject]['distributions'])
-        avg_dist = distributions.mean(axis=0)
-        avg_distributions.append(avg_dist)
+        if len(all_subjects_data[subject]['distributions']) > 0:  # Check if distributions exist
+            distributions = np.array(all_subjects_data[subject]['distributions'])
+            avg_dist = distributions.mean(axis=0)
+            avg_distributions.append(avg_dist)
+        else:
+            # Add a zero array if no distributions exist
+            avg_distributions.append(np.zeros(5))
     
-    # Convert to numpy array for easier manipulation
+    # Convert to numpy array after ensuring all elements have the same shape
     avg_distributions = np.array(avg_distributions)
     
     # Set up bar positions
@@ -185,4 +194,4 @@ def main(demographic='novice'):
     plot_subject_comparisons(all_subjects_data_eeg, 'eeg', demographic)
 
 if __name__ == "__main__":
-    main(demographic='expert')
+    main(demographic='novice')

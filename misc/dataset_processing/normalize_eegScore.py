@@ -23,20 +23,25 @@ def normalize_eeg_score(subject_folder):
             # Read the CSV file
             df = pd.read_csv(file_path)
             
-            # Calculate the min and max of the EEGScore column
-            min_eeg = df['EEGScore'].min()
-            max_eeg = df['EEGScore'].max()
+            # Find min and max values, excluding zeros
+            min_eeg = df[df['EEGScore'] < 0]['EEGScore'].min()  # minimum negative value
+            max_eeg = df[df['EEGScore'] > 0]['EEGScore'].max()  # maximum positive value
             
-            # Print the min and max EEG scores for the current file
-            print(f"Processing {filename}: Min EEGScore = {min_eeg}, Max EEGScore = {max_eeg}")
-            
-            # Create a mask for zero values
+            # Create masks for zero, positive and negative values
             zero_mask = df['EEGScore'] == 0
+            positive_mask = df['EEGScore'] > 0
+            negative_mask = df['EEGScore'] < 0
             
-            # Normalize the EEGScore column, preserving zeros
-            df['NormalizedEEGScore'] = 2 * ((df['EEGScore'] - min_eeg) / (max_eeg - min_eeg)) - 1
-            # Restore zeros
+            # Normalize positive values (0 to max → 0 to 1)
+            df.loc[positive_mask, 'NormalizedEEGScore'] = df.loc[positive_mask, 'EEGScore'] / max_eeg
+            
+            # Normalize negative values (min to 0 → -1 to 0)
+            df.loc[negative_mask, 'NormalizedEEGScore'] = df.loc[negative_mask, 'EEGScore'] / abs(min_eeg)
+            
+            # Keep zeros as zeros
             df.loc[zero_mask, 'NormalizedEEGScore'] = 0
+            
+            print(f"Processing: Min EEGScore = {min_eeg}, Max EEGScore = {max_eeg}")
             
             # Select the required columns
             df = df[['x', 'y', 'z', 'EEGScore', 'NormalizedEEGScore']]
@@ -46,4 +51,4 @@ def normalize_eeg_score(subject_folder):
             df.to_csv(output_file_path, index=False)
 
 # Example usage
-normalize_eeg_score('../data/expert/subject_2')
+normalize_eeg_score('data/novice/subject_3')
