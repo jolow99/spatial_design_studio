@@ -122,7 +122,7 @@ def plot_model_comparison(data_dir, model_name, config_type='et'):
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])  # Adjust layout to prevent title overlap
     
     # Save visualization
-    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'visualizations')
+    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dataset_by_model_analysis')
     os.makedirs(output_dir, exist_ok=True)
     save_path = os.path.join(output_dir, f'model_comparison_{model_name}_{config_type}.png')
     plt.savefig(save_path, dpi=300, bbox_inches='tight')

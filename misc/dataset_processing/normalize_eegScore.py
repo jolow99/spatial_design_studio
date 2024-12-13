@@ -51,4 +51,4 @@ def normalize_eeg_score(subject_folder):
             df.to_csv(output_file_path, index=False)
 
 # Example usage
-normalize_eeg_score('data/novice/subject_3')
+normalize_eeg_score('data/expert/subject_3')

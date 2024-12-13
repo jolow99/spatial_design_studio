@@ -31,5 +31,5 @@ def simplify_filenames(directory):
                     print(f'Error renaming {file}: {e}')
 
 # Usage example
-directory = '../data/expert/subject_2'
+directory = 'data/expert/subject_3'
 simplify_filenames(directory)

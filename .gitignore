@@ -9,3 +9,6 @@ src/__pycache__/.
 src/models/__pycache__
 .DS_Store
 *.pyc
+misc/dataset_analysis/attention_intensity_analysis
+misc/dataset_analysis/dataset_distribution_analysis
+misc/dataset_analysis/form_type_analysis
