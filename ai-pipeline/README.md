@@ -3,7 +3,7 @@
 This pipeline processes and analyzes attention data from eye-tracking (ET) and EEG measurements, using a modified DGCNN (Dynamic Graph CNN) architecture.
 
 ## Directory Structure
-
+```
 ai-pipeline/
 ├── configs/
 │   └── config.yaml          # Configuration settings
@@ -16,6 +16,7 @@ ai-pipeline/
 ├── main.py                  # Main training script
 ├── plot_losses.py          # Utility for visualizing training losses
 └── requirements.txt        # Dependencies
+```
 
 ## Setup
 
