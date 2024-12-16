@@ -186,7 +186,9 @@ def train_model(model, optimizer, dataloader, device, num_epochs, checkpoint_dir
             # Calculate all metrics
             class_distribution = [int((pred_classes == i).sum()) for i in range(5)]
             target_distribution = [int((data.y == i).sum()) for i in range(5)]
-            f1_scores = f1_score(true_classes, pred_classes_np, average=None, zero_division=0)
+            f1_scores = np.zeros(5)  # Initialize array with zeros for all 5 classes
+            present_f1_scores = f1_score(true_classes, pred_classes_np, average=None, zero_division=0)
+            f1_scores[:len(present_f1_scores)] = present_f1_scores
             
             # Create metrics table
             metrics_table = []

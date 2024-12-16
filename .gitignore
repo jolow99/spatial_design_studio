@@ -12,3 +12,4 @@ src/models/__pycache__
 misc/dataset_analysis/attention_intensity_analysis
 misc/dataset_analysis/dataset_distribution_analysis
 misc/dataset_analysis/form_type_analysis
+checkpoints
